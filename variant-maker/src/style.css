@@ -162,3 +162,9 @@ details .sub { display: grid; gap: 8px; margin-top: 8px; }
 .pdf-mode .tools { display: none; }
 .page-empty { color: #777; font: 14px var(--ui); text-align: center; padding-top: 60px; }
 .chip .chip-text { padding: 4px 10px 4px 6px; cursor: pointer; }
+.coverage { display: grid; gap: 2px; font-size: 13px; border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; }
+.coverage p { margin: 0; }
+.coverage .cov-title { font-weight: 600; margin-bottom: 4px; }
+.coverage .cov-row.done b { color: var(--ok); }
+.coverage .cov-row.miss b { color: var(--warn); }
+.coverage .cov-row span { color: var(--muted); }

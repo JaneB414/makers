@@ -118,6 +118,7 @@
         </div>
         <p class="hint" id="make-target"></p>
         <div id="status" class="msg" hidden></div>
+        <div id="coverage" class="coverage" hidden></div>
 
         <div id="manual" class="ai-out" hidden>
           <p class="hint" id="manual-intro">AI 유형은 Claude 채팅에서 만들어요. ① 요청문을 복사해 <a href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai</a>에 붙여 넣고 ② Claude의 답변 전체를 복사해 아래 칸에 붙여 넣은 뒤 ③ 불러오기를 누르세요. 요청문이 여러 개면 하나씩 차례로 보내고, 답변은 이어서 붙여 넣어도 돼요.</p>
@@ -141,7 +142,7 @@
           </div>
         </div>
         <p class="hint" id="save-hint"></p>
-        <p class="hint">한 지문에서 같은 유형을 2개 이상 만들면 유형 안에서 1회차, 2회차 순서로 번갈아 나와요. ‘회차별로 나누기’를 켜면 1회차 시험지, 2회차 시험지로 쪽을 나눠요.</p>
+        <p class="hint">‘회차별로 나누기’를 켜면 1회차에 고른 지문 전부가 모든 유형으로 한 번씩 실리고, 2회차는 새 쪽에서 같은 방식으로 한 번 더 실려요. 개수를 2로 하면 2회차까지 생겨요.</p>
         <div id="save-status" class="msg" hidden></div>
         <div id="confirm-clear" class="msg warn" hidden>
           문제를 모두 지울까요? 지문 보관함은 그대로 남아요.
@@ -178,7 +179,7 @@
           <label class="check"><input type="checkbox" id="opt-cols" checked> 2단 편집</label>
           <label class="check"><input type="checkbox" id="opt-answers" checked> 정답지 붙이기</label>
           <label class="check"><input type="checkbox" id="opt-expl" checked> 해설 넣기</label>
-          <label class="check"><input type="checkbox" id="opt-rounds"> 회차별로 나누기</label>
+          <label class="check"><input type="checkbox" id="opt-rounds" checked> 회차별로 나누기</label>
         </div>
       </div>
       <div class="pages-scroll" id="pages-scroll"><div class="pages" id="pages"></div></div>

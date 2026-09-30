@@ -17,7 +17,7 @@
   var state = {
     problems: [], selection: {},
     layout: { title: "영어 변형문제", eyebrow: "ENGLISH · 변형문제", headerLeft: "", headerRight: "", footerLeft: "", footerRight: "", showName: true },
-    options: { columns: 2, answers: true, explanations: true }
+    options: { columns: 2, answers: true, explanations: true, rounds: true }
   };
   var lib = { exams: [], currentExam: null };
   var editing = null;        // 편집 중인 지문 id (null이면 새 지문)
@@ -25,6 +25,7 @@
   var examForm = null;       // "new" | "rename"
   var pendingCtx = null;     // 수동 AI 붙여넣기를 기다리는 {exam, passages}
   var sampleFn = null, downloadsCap = null, aborter = null;
+  var lastTarget = null;     // 마지막으로 만든 {passages, types}: 빠진 문제 점검용
 
   if (window.claude && typeof window.claude.use === "function") {
     window.claude.use("sample").then(function (s) { sampleFn = s; updateManualIntro(); }).catch(function () {});
@@ -353,8 +354,9 @@
       });
     });
     if (list.length) return { passages: list, fromLibrary: true };
+    // 고른 지문이 없을 때는 보관함에 저장하지 않은 새 지문(편집 칸)으로만 만든다.
     var text = $("passage").value.trim();
-    if (!text) return { passages: [] };
+    if (!text || editing) return { passages: [] };
     var exam = currentExam();
     return { passages: [{ exam: exam ? exam.name : "", no: VM.normalizeNo($("p-no").value), text: text }], fromLibrary: false };
   }
@@ -368,10 +370,10 @@
       byExam[p.exam].push(p.no ? VM.noLabel(p.no) : "편집 중인 지문");
     });
     var summary = groups.map(function (g) { return (g ? g + ": " : "") + byExam[g].join(", "); }).join(" / ");
-    $("pick-count").textContent = t.fromLibrary ? "선택한 지문 " + t.passages.length + "개" : "선택한 지문이 없으면 편집 칸의 지문으로 만들어요.";
+    $("pick-count").textContent = t.fromLibrary ? "선택한 지문 " + t.passages.length + "개" : "고른 지문이 없어요.";
     $("make-target").textContent = t.passages.length
       ? "대상: " + summary + " · 약 " + (per * t.passages.length) + "문제"
-      : "지문을 고르거나 편집 칸에 지문을 넣어 주세요.";
+      : "2번 칸에서 문제를 만들 지문을 골라 주세요.";
   }
 
   // ---------- 만들기 ----------
@@ -399,7 +401,7 @@
   function make() {
     var target = targetPassages();
     var types = selectedTypes();
-    if (!target.passages.length) return show($("status"), "err", "지문을 고르거나 편집 칸에 지문을 넣어 주세요.");
+    if (!target.passages.length) return show($("status"), "err", "2번 칸 ‘문제지에 넣을 지문 고르기’에서 지문을 골라 주세요. 교재 이름 옆 체크박스로 한 번에 고를 수 있어요.");
     if (!types.length) return show($("status"), "err", "만들 유형을 하나 이상 골라 주세요.");
 
     var rng = VM.makeRng();
@@ -425,6 +427,8 @@
     if (made) prefix.push("자동 유형 " + made + "문제를 추가했어요.");
     if (errors.length) prefix.push(errors.join(" "));
     show($("status"), errors.length ? "warn" : "ok", prefix.join(" "));
+    lastTarget = { passages: target.passages, types: types };
+    renderCoverage();
     if (!ai.length) { $("manual").hidden = true; return; }
 
     pendingCtx = target;
@@ -436,6 +440,44 @@
       $("manual").hidden = false;
       show($("status"), errors.length ? "warn" : "ok", prefix.concat(["AI 유형은 아래 순서대로 진행해 주세요."]).join(" "));
     }
+  }
+
+  // 빠진 문제 점검: 마지막으로 만든 지문 × 유형 × 개수가 문제지에 다 있는지 센다.
+  function renderCoverage() {
+    var box = $("coverage");
+    box.textContent = "";
+    if (!lastTarget || !lastTarget.passages.length) { box.hidden = true; return; }
+    var have = {};
+    state.problems.forEach(function (p) {
+      if (!p.source) return;
+      var k = p.type + "\u0001" + (p.source.exam || "") + "\u0001" + p.source.no;
+      have[k] = (have[k] || 0) + 1;
+    });
+    var complete = true;
+    var title = document.createElement("p");
+    title.className = "cov-title";
+    box.appendChild(title);
+    lastTarget.types.forEach(function (t) {
+      var missing = [];
+      lastTarget.passages.forEach(function (p) {
+        var got = have[t.type + "\u0001" + (p.exam || "") + "\u0001" + p.no] || 0;
+        if (got < t.count) missing.push(VM.noLabel(p.no) + (t.count > 1 ? "(" + got + "/" + t.count + ")" : ""));
+      });
+      var row = document.createElement("p");
+      row.className = "cov-row " + (missing.length ? "miss" : "done");
+      var name = document.createElement("b");
+      name.textContent = t.name;
+      var info = document.createElement("span");
+      var done = lastTarget.passages.length - missing.length;
+      info.textContent = " 지문 " + done + "/" + lastTarget.passages.length + (missing.length ? " · 빠짐: " + missing.join(", ") : " · 모두 있음");
+      row.append(name, info);
+      box.appendChild(row);
+      if (missing.length) complete = false;
+    });
+    title.textContent = complete
+      ? "점검: 고른 지문 " + lastTarget.passages.length + "개 × 유형 " + lastTarget.types.length + "개가 모두 들어 있어요."
+      : "점검: 아직 문제가 없는 지문이 있어요. AI 유형이면 나머지 요청문도 보내고 답변을 불러오세요.";
+    box.hidden = false;
   }
 
   // 요청문에는 지문마다 1, 2, 3… 번호를 붙이고, 답변을 읽을 때 원래 교재·번호로 되돌린다.
@@ -456,7 +498,8 @@
       row.className = "prompt-item";
       var b = document.createElement("button");
       b.type = "button";
-      b.textContent = "① 요청문 복사" + (keyed.length > PROMPT_PASSAGES ? " (" + chunk.map(function (p) { return p.label.trim() || "지문"; }).join(", ") + ")" : "");
+      var total = Math.ceil(keyed.length / PROMPT_PASSAGES);
+      b.textContent = "① 요청문 " + (total > 1 ? (i / PROMPT_PASSAGES + 1) + "/" + total + " " : "") + "복사" + (total > 1 ? " (" + chunk.map(function (p) { return p.label.trim() || "지문"; }).join(", ") + ")" : "");
       var note = document.createElement("span");
       note.className = "hint";
       b.addEventListener("click", copier(text, note));
@@ -517,6 +560,7 @@
     $("stop").hidden = true;
     var text = prefix.concat(done ? ["AI 유형 " + done + "문제를 추가했어요."] : []).concat(failed).join(" ");
     show($("status"), failed.length ? "warn" : "ok", text);
+    renderCoverage();
   }
 
   function loadAi() {
@@ -533,6 +577,7 @@
       saveState(); renderPages();
       $("ai-in").value = "";
       show($("status"), res.warnings.length ? "warn" : "ok", res.problems.length + "문제를 불러왔어요. " + res.warnings.join(" "));
+      renderCoverage();
     } catch (e) {
       show($("status"), "err", e.message);
     }
