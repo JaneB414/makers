@@ -339,10 +339,20 @@
 
   // ---------- 지문 여러 개 한꺼번에 등록 ----------
 
-  var PASSAGE_MARK = /^\s*(?:\[\s*(\d{1,3}(?:\s*[-~]\s*\d{1,3})?)\s*\]|(\d{1,3}(?:\s*[-~]\s*\d{1,3})?)\s*번)\s*[.:)]?\s*$/;
+  // 번호 줄: "[18]", "[41-42]", "[3강 1번]", "18번"
+  var PASSAGE_MARK = /^\s*(?:\[\s*([^\]\n]{1,20}?)\s*\]|(\d{1,3}(?:\s*[-~]\s*\d{1,3})?)\s*번)\s*[.:)]?\s*$/;
+  var NUMERIC_NO = /^\d+(?:-\d+)?$/;
 
+  // "41 ~ 42번" → "41-42", "3강  1번" → "3강 1번"
   function normalizeNo(no) {
-    return String(no || "").replace(/\s+/g, "").replace("~", "-").replace(/번$/, "");
+    var s = String(no == null ? "" : no).trim().replace(/\s+/g, " ").replace(/\s*[-~]\s*/g, "-");
+    var m = s.match(/^(\d+(?:-\d+)?)\s*번$/);
+    return m ? m[1] : s;
+  }
+
+  // 화면과 문제지에 쓰는 지문 번호: 숫자면 "29번", 아니면 그대로
+  function noLabel(no) {
+    return NUMERIC_NO.test(no) ? no + "번" : String(no || "");
   }
 
   // "[18]" 또는 "18번" 줄로 시작하는 지문들을 나눈다.
@@ -463,8 +473,7 @@
     var mixed = Object.keys(exams).length > 1;
     return problems.map(function (p) {
       if (!p.source || !p.source.no) return "";
-      var no = /^\d/.test(p.source.no) ? p.source.no + "번" : p.source.no;
-      return (mixed && p.source.exam ? p.source.exam + " · " : "") + no;
+      return (mixed && p.source.exam ? p.source.exam + " · " : "") + noLabel(p.source.no);
     });
   }
 
@@ -778,6 +787,7 @@
     buildCombinedPrompt: buildCombinedPrompt,
     parseBulkPassages: parseBulkPassages,
     normalizeNo: normalizeNo,
+    noLabel: noLabel,
     parseAiProblems: parseAiProblems,
     parseRuns: parseRuns,
     sourceLabels: sourceLabels,

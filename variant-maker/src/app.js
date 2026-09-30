@@ -76,7 +76,7 @@
     });
     if (!lib.exams.length) {
       var o = document.createElement("option");
-      o.value = ""; o.textContent = "시험이 없어요. ‘새 시험’을 눌러 만드세요.";
+      o.value = ""; o.textContent = "교재가 없어요. ‘새 교재’를 눌러 만드세요.";
       sel.appendChild(o);
     }
     sel.value = lib.currentExam || "";
@@ -84,35 +84,86 @@
     renderChips();
   }
 
+  // 보관함(관리)의 지문 목록: 번호를 누르면 편집 칸에 불러온다.
   function renderChips() {
     var box = $("chips");
     box.textContent = "";
     var exam = currentExam();
     var list = exam ? sortPassages(exam.passages) : [];
-    var n = list.filter(function (p) { return checked[p.id]; }).length;
-    $("chips-count").textContent = exam ? "지문 " + list.length + "개 · " + n + "개 선택" : "";
+    $("chips-count").textContent = exam && list.length ? "지문 " + list.length + "개. 번호를 누르면 아래에서 고칠 수 있어요." : "";
     if (!list.length) {
       var e = document.createElement("span");
       e.className = "empty-chip";
-      e.textContent = exam ? "아직 등록한 지문이 없어요. 아래에 번호와 지문을 넣고 ‘지문 저장’을 누르세요." : "먼저 시험을 만드세요.";
+      e.textContent = exam ? "아직 등록한 지문이 없어요. 아래에 번호와 지문을 넣고 ‘지문 저장’을 누르세요." : "먼저 ‘새 교재’를 눌러 교재를 만드세요.";
       box.appendChild(e);
     }
     list.forEach(function (p) {
       var chip = document.createElement("span");
-      chip.className = "chip" + (checked[p.id] ? " checked" : "") + (editing === p.id ? " editing" : "");
-      var cb = document.createElement("input");
-      cb.type = "checkbox"; cb.checked = !!checked[p.id]; cb.id = "chip-" + p.id;
-      cb.setAttribute("aria-label", p.no + "번 지문 선택");
-      cb.addEventListener("change", function () {
-        if (cb.checked) checked[p.id] = true; else delete checked[p.id];
-        saveState(); renderChips(); updateTarget();
-      });
+      chip.className = "chip plain" + (editing === p.id ? " editing" : "");
       var b = document.createElement("button");
-      b.type = "button"; b.textContent = /^\d/.test(p.no) ? p.no + "번" : p.no;
+      b.type = "button"; b.textContent = VM.noLabel(p.no);
       b.title = p.text.slice(0, 80);
       b.addEventListener("click", function () { editPassage(p.id); });
-      chip.append(cb, b);
+      chip.appendChild(b);
       box.appendChild(chip);
+    });
+    renderPicker();
+  }
+
+  // 문제지에 넣을 지문 고르기: 모든 교재의 지문을 교재별로 묶어 보여 준다.
+  var openGroups = {};
+  function renderPicker() {
+    var box = $("picker");
+    box.textContent = "";
+    var withPassages = lib.exams.filter(function (e) { return e.passages.length; });
+    if (!withPassages.length) {
+      var empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "보관함에 지문을 등록하면 여기에서 고를 수 있어요.";
+      box.appendChild(empty);
+    }
+    withPassages.forEach(function (exam) {
+      var list = sortPassages(exam.passages);
+      var n = list.filter(function (p) { return checked[p.id]; }).length;
+      var group = document.createElement("details");
+      group.className = "pick-group";
+      group.open = openGroups[exam.id] !== undefined ? openGroups[exam.id] : (n > 0 || withPassages.length === 1);
+      group.addEventListener("toggle", function () { openGroups[exam.id] = group.open; });
+      var sum = document.createElement("summary");
+      var all = document.createElement("input");
+      all.type = "checkbox"; all.id = "pick-all-" + exam.id;
+      all.checked = n === list.length; all.indeterminate = n > 0 && n < list.length;
+      all.setAttribute("aria-label", exam.name + " 지문 모두 선택");
+      all.addEventListener("click", function (ev) { ev.stopPropagation(); });
+      all.addEventListener("change", function () {
+        list.forEach(function (p) { if (all.checked) checked[p.id] = true; else delete checked[p.id]; });
+        openGroups[exam.id] = true;
+        saveState(); renderPicker();
+      });
+      var name = document.createElement("span"); name.textContent = exam.name;
+      var cnt = document.createElement("span"); cnt.className = "n"; cnt.textContent = n + " / " + list.length;
+      sum.append(all, name, cnt);
+      group.appendChild(sum);
+      var chips = document.createElement("div");
+      chips.className = "chips";
+      list.forEach(function (p) {
+        var chip = document.createElement("label");
+        chip.className = "chip" + (checked[p.id] ? " checked" : "");
+        chip.title = p.text.slice(0, 80);
+        var cb = document.createElement("input");
+        cb.type = "checkbox"; cb.checked = !!checked[p.id]; cb.id = "pick-" + p.id;
+        cb.addEventListener("change", function () {
+          if (cb.checked) checked[p.id] = true; else delete checked[p.id];
+          openGroups[exam.id] = true;
+          saveState(); renderPicker();
+        });
+        var t = document.createElement("span");
+        t.className = "chip-text"; t.textContent = VM.noLabel(p.no);
+        chip.append(cb, t);
+        chips.appendChild(chip);
+      });
+      group.appendChild(chips);
+      box.appendChild(group);
     });
     updateTarget();
   }
@@ -129,7 +180,7 @@
 
   function savePassage() {
     var exam = currentExam();
-    if (!exam) return show($("lib-status"), "err", "먼저 ‘새 시험’으로 시험을 만드세요.");
+    if (!exam) return show($("lib-status"), "err", "먼저 ‘새 교재’를 눌러 교재를 만드세요.");
     var no = VM.normalizeNo($("p-no").value);
     var text = $("passage").value.trim();
     if (!no) return show($("lib-status"), "err", "지문 번호를 넣어 주세요. 예: 29, 41-42");
@@ -161,7 +212,7 @@
   function openExamForm(kind) {
     examForm = kind;
     $("exam-form").hidden = false;
-    $("exam-form-label").textContent = kind === "new" ? "새 시험 이름" : "바꿀 이름";
+    $("exam-form-label").textContent = kind === "new" ? "새 교재 이름" : "바꿀 이름";
     $("exam-name").value = kind === "rename" && currentExam() ? currentExam().name : "";
     $("exam-name").focus();
   }
@@ -186,15 +237,17 @@
     var exam = currentExam();
     if (!exam) return;
     lib.exams = lib.exams.filter(function (e) { return e !== exam; });
+    exam.passages.forEach(function (p) { delete checked[p.id]; });
+    saveState();
     lib.currentExam = lib.exams.length ? lib.exams[0].id : null;
     $("exam-confirm").hidden = true;
     saveLib(); editPassage(null); renderExams();
-    show($("lib-status"), "ok", "‘" + exam.name + "’ 시험을 지웠어요.");
+    show($("lib-status"), "ok", "‘" + exam.name + "’ 교재를 지웠어요.");
   }
 
   function bulkAdd() {
     var exam = currentExam();
-    if (!exam) return show($("lib-status"), "err", "먼저 ‘새 시험’으로 시험을 만드세요.");
+    if (!exam) return show($("lib-status"), "err", "먼저 ‘새 교재’를 눌러 교재를 만드세요.");
     var list = VM.parseBulkPassages($("bulk").value);
     if (!list.length) return show($("lib-status"), "err", "번호 줄([18] 또는 18번)을 찾지 못했어요. 지문마다 번호 줄을 먼저 써 주세요.");
     var replaced = 0;
@@ -291,24 +344,34 @@
       .map(function (t) { return { type: t.key, count: state.selection[t.key].count, mode: t.mode, name: t.name }; });
   }
 
-  // 문제를 만들 지문: 보관함에서 체크한 지문, 없으면 편집 칸의 지문
+  // 문제를 만들 지문: 고르기에서 체크한 지문(모든 교재), 없으면 편집 칸의 지문
   function targetPassages() {
-    var exam = currentExam();
-    var list = exam ? sortPassages(exam.passages.filter(function (p) { return checked[p.id]; })) : [];
-    if (list.length) return { exam: exam.name, passages: list, fromLibrary: true };
+    var list = [];
+    lib.exams.forEach(function (e) {
+      sortPassages(e.passages).forEach(function (p) {
+        if (checked[p.id]) list.push({ id: p.id, exam: e.name, no: p.no, text: p.text });
+      });
+    });
+    if (list.length) return { passages: list, fromLibrary: true };
     var text = $("passage").value.trim();
-    if (!text) return { exam: "", passages: [] };
-    return { exam: exam ? exam.name : "", passages: [{ no: VM.normalizeNo($("p-no").value), text: text }], fromLibrary: false };
+    if (!text) return { passages: [] };
+    var exam = currentExam();
+    return { passages: [{ exam: exam ? exam.name : "", no: VM.normalizeNo($("p-no").value), text: text }], fromLibrary: false };
   }
 
   function updateTarget() {
     var t = targetPassages();
-    var types = selectedTypes();
-    var per = types.reduce(function (s, x) { return s + x.count; }, 0);
-    var names = t.passages.map(function (p) { return p.no ? p.no + "번" : "편집 중인 지문"; });
+    var per = selectedTypes().reduce(function (s, x) { return s + x.count; }, 0);
+    var groups = [], byExam = {};
+    t.passages.forEach(function (p) {
+      if (!byExam[p.exam]) { byExam[p.exam] = []; groups.push(p.exam); }
+      byExam[p.exam].push(p.no ? VM.noLabel(p.no) : "편집 중인 지문");
+    });
+    var summary = groups.map(function (g) { return (g ? g + ": " : "") + byExam[g].join(", "); }).join(" / ");
+    $("pick-count").textContent = t.fromLibrary ? "선택한 지문 " + t.passages.length + "개" : "선택한 지문이 없으면 편집 칸의 지문으로 만들어요.";
     $("make-target").textContent = t.passages.length
-      ? "대상: " + (names.length > 8 ? names.slice(0, 8).join(", ") + " 외 " + (names.length - 8) + "개" : names.join(", ")) + " · 약 " + (per * t.passages.length) + "문제"
-      : "지문을 체크하거나 편집 칸에 지문을 넣어 주세요.";
+      ? "대상: " + summary + " · 약 " + (per * t.passages.length) + "문제"
+      : "지문을 고르거나 편집 칸에 지문을 넣어 주세요.";
   }
 
   // ---------- 만들기 ----------
@@ -332,7 +395,7 @@
   function make() {
     var target = targetPassages();
     var types = selectedTypes();
-    if (!target.passages.length) return show($("status"), "err", "지문을 체크하거나 편집 칸에 지문을 넣어 주세요.");
+    if (!target.passages.length) return show($("status"), "err", "지문을 고르거나 편집 칸에 지문을 넣어 주세요.");
     if (!types.length) return show($("status"), "err", "만들 유형을 하나 이상 골라 주세요.");
 
     var rng = VM.makeRng();
@@ -343,7 +406,7 @@
       types.filter(function (t) { return t.mode === "auto"; }).forEach(function (t) {
         try {
           var ps = VM.AUTO_MAKERS[t.type](sents, t.count, rng);
-          ps.forEach(function (x) { x.source = srcOf(target.exam, p); });
+          ps.forEach(function (x) { x.source = srcOf(p.exam, p); });
           insertProblems(ps);
           made += ps.length;
         } catch (e) { errors.push((p.no ? p.no + "번 " : "") + t.name + ": " + e.message); }
@@ -369,18 +432,25 @@
     }
   }
 
+  // 요청문에는 지문마다 1, 2, 3… 번호를 붙이고, 답변을 읽을 때 원래 교재·번호로 되돌린다.
   function renderPrompts(target, ai) {
     var box = $("prompts");
     box.textContent = "";
     var reqs = ai.map(function (a) { return { type: a.type, count: a.count }; });
-    for (var i = 0; i < target.passages.length; i += PROMPT_PASSAGES) {
-      var chunk = target.passages.slice(i, i + PROMPT_PASSAGES);
+    target.keyMap = {};
+    var keyed = target.passages.map(function (p, i) {
+      var key = String(i + 1);
+      target.keyMap[key] = p;
+      return { no: key, text: p.text, label: (p.exam ? p.exam + " " : "") + (p.no ? VM.noLabel(p.no) : "") };
+    });
+    for (var i = 0; i < keyed.length; i += PROMPT_PASSAGES) {
+      var chunk = keyed.slice(i, i + PROMPT_PASSAGES);
       var text = VM.buildCombinedPrompt(chunk, reqs);
       var row = document.createElement("div");
       row.className = "prompt-item";
       var b = document.createElement("button");
       b.type = "button";
-      b.textContent = "① 요청문 복사" + (target.passages.length > PROMPT_PASSAGES ? " (" + chunk.map(function (p) { return p.no || "지문"; }).join(", ") + ")" : "");
+      b.textContent = "① 요청문 복사" + (keyed.length > PROMPT_PASSAGES ? " (" + chunk.map(function (p) { return p.label.trim() || "지문"; }).join(", ") + ")" : "");
       var note = document.createElement("span");
       note.className = "hint";
       b.addEventListener("click", copier(text, note));
@@ -422,8 +492,8 @@
       show($("status"), "", prefix.concat(["AI가 문제를 만드는 중이에요 (" + (i + 1) + "/" + jobs.length + ": " + (job.p.no ? job.p.no + "번 " : "") + job.a.name + "). 하나에 30초~1분쯤 걸려요."]).join(" "));
       try {
         var data = await sampleFn.json(VM.buildPrompt(job.p.text, job.a.type, job.a.count), { signal: aborter.signal });
-        var res = VM.parseAiProblems(data, { type: job.a.type, exam: target.exam, no: job.p.no });
-        res.problems.forEach(function (x) { x.type = job.a.type; x.source = srcOf(target.exam, job.p); });
+        var res = VM.parseAiProblems(data, { type: job.a.type, exam: job.p.exam, no: job.p.no });
+        res.problems.forEach(function (x) { x.type = job.a.type; x.source = srcOf(job.p.exam, job.p); });
         insertProblems(res.problems);
         saveState(); renderPages();
         done += res.problems.length;
@@ -447,9 +517,12 @@
     var text = $("ai-in").value.trim();
     if (!text) return show($("status"), "err", "Claude의 답변을 먼저 붙여 넣어 주세요.");
     try {
-      var ctx = pendingCtx || { exam: "", passages: [] };
-      var one = ctx.passages.length === 1 ? ctx.passages[0].no : "";
-      var res = VM.parseAiProblems(text, { exam: ctx.exam, no: one });
+      var ctx = pendingCtx || { passages: [], keyMap: {} };
+      var res = VM.parseAiProblems(text, { no: ctx.passages.length === 1 ? "1" : "" });
+      res.problems.forEach(function (x) {
+        var p = x.source && ctx.keyMap && ctx.keyMap[x.source.no];
+        x.source = p ? srcOf(p.exam, p) : null;
+      });
       insertProblems(res.problems);
       saveState(); renderPages();
       $("ai-in").value = "";
@@ -740,7 +813,7 @@
   // ---------- 시작 ----------
 
   function seedExample() {
-    var exam = { id: uid(), name: "예시 시험", passages: [{ id: uid(), no: "29", text: SAMPLE }] };
+    var exam = { id: uid(), name: "예시 교재", passages: [{ id: uid(), no: "29", text: SAMPLE }] };
     lib = { exams: [exam], currentExam: exam.id };
     checked = {}; checked[exam.passages[0].id] = true;
     state.selection = { order: { on: true, count: 1 }, insert: { on: true, count: 1 }, arrange: { on: true, count: 1 } };
@@ -798,16 +871,12 @@
     $("exam-cancel").addEventListener("click", function () { $("exam-form").hidden = true; });
     $("exam-delete").addEventListener("click", function () {
       var ex = currentExam(); if (!ex) return;
-      $("exam-confirm-text").textContent = "‘" + ex.name + "’ 시험과 지문 " + ex.passages.length + "개를 지울까요? ";
+      $("exam-confirm-text").textContent = "‘" + ex.name + "’ 교재와 지문 " + ex.passages.length + "개를 지울까요? ";
       $("exam-confirm").hidden = false;
     });
     $("exam-confirm-yes").addEventListener("click", deleteExam);
     $("exam-confirm-no").addEventListener("click", function () { $("exam-confirm").hidden = true; });
-    $("chips-all").addEventListener("click", function () {
-      var ex = currentExam(); if (!ex) return;
-      ex.passages.forEach(function (p) { checked[p.id] = true; }); saveState(); renderChips();
-    });
-    $("chips-none").addEventListener("click", function () { checked = {}; saveState(); renderChips(); });
+    $("pick-none").addEventListener("click", function () { checked = {}; saveState(); renderPicker(); });
     $("p-save").addEventListener("click", savePassage);
     $("p-new").addEventListener("click", function () { editPassage(null); $("p-no").focus(); });
     $("p-delete").addEventListener("click", deletePassage);

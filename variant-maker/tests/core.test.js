@@ -120,12 +120,21 @@ test("원문 번호: 시험이 섞이면 시험 이름을 붙인다", () => {
   assert.deepStrictEqual(VM.sourceLabels([a, b, c]), ["26년 9월 · 29번", "26년 6월 · 41-42번", ""]);
 });
 
+test("지문 번호: 숫자는 '번'을 붙이고, 교재식 번호는 그대로 둔다", () => {
+  assert.strictEqual(VM.normalizeNo(" 41 ~ 42번 "), "41-42");
+  assert.strictEqual(VM.normalizeNo("3강  1번"), "3강 1번");
+  assert.strictEqual(VM.noLabel("29"), "29번");
+  assert.strictEqual(VM.noLabel("3강 1번"), "3강 1번");
+  assert.deepStrictEqual(VM.sourceLabels([{ source: { exam: "수능특강", no: "3강 1번" } }]), ["3강 1번"]);
+});
+
 test("지문 한꺼번에 등록: [번호] 또는 N번 줄로 나눈다", () => {
-  const list = VM.parseBulkPassages("[18]\nDear Ms. Carter,\nThanks.\n\n19번\nThe sun rose.\n[41 ~ 42]\nLong text.\n");
+  const list = VM.parseBulkPassages("[18]\nDear Ms. Carter,\nThanks.\n\n19번\nThe sun rose.\n[41 ~ 42]\nLong text.\n[3강 1번]\nLesson text.\n");
   assert.deepStrictEqual(list, [
     { no: "18", text: "Dear Ms. Carter,\nThanks." },
     { no: "19", text: "The sun rose." },
-    { no: "41-42", text: "Long text." }
+    { no: "41-42", text: "Long text." },
+    { no: "3강 1번", text: "Lesson text." }
   ]);
 });
 

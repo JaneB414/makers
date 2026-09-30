@@ -91,6 +91,17 @@ details .sub { display: grid; gap: 8px; margin-top: 8px; }
 .chip.checked { border-color: var(--accent); background: var(--accent-soft); }
 .chip.editing button { font-weight: 700; text-decoration: underline; }
 .chips .empty-chip { font-size: 13px; color: var(--muted); }
+.row.between { justify-content: space-between; align-items: center; }
+.chip.plain button { padding: 4px 10px; }
+.picker { display: grid; gap: 6px; max-height: 360px; overflow: auto; }
+.pick-group { border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; }
+.pick-group[open] { padding-bottom: 10px; }
+.pick-group > summary { display: flex; align-items: center; gap: 8px; color: var(--fg); font-weight: 600; list-style: none; }
+.pick-group > summary::-webkit-details-marker { display: none; }
+.pick-group > summary::before { content: "▸"; color: var(--muted); font-size: 12px; }
+.pick-group[open] > summary::before { content: "▾"; }
+.pick-group > summary .n { font-weight: 400; color: var(--muted); font-size: 12.5px; }
+.pick-group .chips { margin-top: 8px; }
 .editor { display: grid; gap: 8px; border-top: 1px dashed var(--line); padding-top: 12px; }
 
 /* 유형 */
@@ -149,3 +160,4 @@ details .sub { display: grid; gap: 8px; margin-top: 8px; }
 .page .tools button { font: 11px var(--ui); padding: 1px 6px; background: #fff; color: #555; border-color: #ccc; }
 .pdf-mode .tools { display: none; }
 .page-empty { color: #777; font: 14px var(--ui); text-align: center; padding-top: 60px; }
+.chip .chip-text { padding: 4px 10px 4px 6px; cursor: pointer; }
