@@ -306,14 +306,19 @@
     ].join("\n");
   }
 
-  function buildCombinedPrompt(passage, requests) {
+  // 여러 지문과 여러 유형을 한 번에 요청하는 요청문 (Claude 채팅에 붙여 넣는 용도)
+  function buildCombinedPrompt(passages, requests) {
     var parts = requests.map(function (r) {
       var t = TYPE_BY_KEY[r.type];
-      return "### " + t.name + " (" + r.count + "문제, type 값: \"" + r.type + "\")\n- 기본 발문: " + t.instruction + "\n- " + AI_SPECS[r.type];
+      return "### " + t.name + " (지문마다 " + r.count + "문제, type 값: \"" + r.type + "\")\n- 기본 발문: " + t.instruction + "\n- " + AI_SPECS[r.type];
+    });
+    var texts = passages.map(function (p, i) {
+      var id = p.no || String(i + 1);
+      return "### 지문 [" + id + "]\n" + normalizeText(p.text).trim();
     });
     return [
       "당신은 한국 고등학교 영어 교사로, 수능·모의고사 형식의 영어 변형문제를 만듭니다.",
-      "아래 지문으로 다음 유형의 문제를 만드세요.",
+      "아래 " + passages.length + "개 지문 각각으로 다음 유형의 문제를 만드세요.",
       "",
       parts.join("\n\n"),
       "",
@@ -324,27 +329,63 @@
       "- 문단을 나눌 때는 \\n 을 씁니다. explanation은 한국어 1~2문장.",
       "",
       "## 출력 형식",
-      "설명 없이 JSON만 출력합니다. 각 문제에 type 값을 반드시 넣습니다.",
-      '{"problems":[{"type":"topic","instruction":"발문","box":null,"boxFirst":true,"passage":"지문","choices":["…","…","…","…","…"],"answer":"③","explanation":"해설"}]}',
+      "설명 없이 JSON만 출력합니다. 각 문제에 type 값과, 어느 지문으로 만들었는지 src 값(지문 [ ] 안의 번호)을 반드시 넣습니다.",
+      '{"problems":[{"src":"' + (passages[0].no || "1") + '","type":"topic","instruction":"발문","box":null,"boxFirst":true,"passage":"지문","choices":["…","…","…","…","…"],"answer":"③","explanation":"해설"}]}',
       "",
       "## 지문",
-      normalizeText(passage).trim()
+      texts.join("\n\n")
     ].join("\n");
+  }
+
+  // ---------- 지문 여러 개 한꺼번에 등록 ----------
+
+  var PASSAGE_MARK = /^\s*(?:\[\s*(\d{1,3}(?:\s*[-~]\s*\d{1,3})?)\s*\]|(\d{1,3}(?:\s*[-~]\s*\d{1,3})?)\s*번)\s*[.:)]?\s*$/;
+
+  function normalizeNo(no) {
+    return String(no || "").replace(/\s+/g, "").replace("~", "-").replace(/번$/, "");
+  }
+
+  // "[18]" 또는 "18번" 줄로 시작하는 지문들을 나눈다.
+  function parseBulkPassages(text) {
+    var out = [], current = null;
+    normalizeText(text).split("\n").forEach(function (line) {
+      var m = line.match(PASSAGE_MARK);
+      if (m) {
+        current = { no: normalizeNo(m[1] || m[2]), lines: [] };
+        out.push(current);
+      } else if (current) {
+        current.lines.push(line);
+      }
+    });
+    return out.map(function (p) { return { no: p.no, text: p.lines.join("\n").trim() }; })
+      .filter(function (p) { return p.text; });
   }
 
   // ---------- AI 답변 읽기 ----------
 
-  function extractJson(text) {
-    if (text && typeof text === "object") return text;
-    var s = String(text || "").trim();
-    var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fence) s = fence[1].trim();
-    try { return JSON.parse(s); } catch (e) { /* 아래에서 다시 시도 */ }
-    var a = s.indexOf("{"), b = s.lastIndexOf("}");
-    if (a >= 0 && b > a) {
-      try { return JSON.parse(s.slice(a, b + 1)); } catch (e2) { /* 실패 */ }
+  // 글 속에 들어 있는 JSON 값들을 모두 꺼낸다. 답변 여러 개를 이어 붙여도 읽을 수 있다.
+  function extractJsonAll(text) {
+    if (text && typeof text === "object") return [text];
+    var s = String(text || "").replace(/```(?:json)?/g, "");
+    var found = [];
+    for (var i = 0; i < s.length; i++) {
+      if (s[i] !== "{") continue;
+      var depth = 0, inStr = false, esc = false, j = i;
+      for (; j < s.length; j++) {
+        var c = s[j];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (c === "\\") esc = true;
+          else if (c === "\"") inStr = false;
+        } else if (c === "\"") inStr = true;
+        else if (c === "{") depth++;
+        else if (c === "}") { depth--; if (depth === 0) break; }
+      }
+      if (depth !== 0) break;
+      try { found.push(JSON.parse(s.slice(i, j + 1))); i = j; } catch (e) { /* 다음 { 부터 다시 */ }
     }
-    throw new Error("AI 답변에서 JSON을 찾지 못했습니다. 답변 전체를 그대로 붙여 넣었는지 확인하세요.");
+    if (!found.length) throw new Error("AI 답변에서 JSON을 찾지 못했습니다. 답변 전체를 그대로 붙여 넣었는지 확인하세요.");
+    return found;
   }
 
   function normalizeAnswer(ans) {
@@ -353,20 +394,26 @@
     return s;
   }
 
-  // AI 답변을 문제 목록으로 바꾼다. fallbackType은 type이 빠진 경우에 쓴다.
-  function parseAiProblems(text, fallbackType) {
-    var data = extractJson(text);
-    var list = Array.isArray(data) ? data : data.problems;
-    if (!Array.isArray(list)) throw new Error("AI 답변에 problems 목록이 없습니다.");
+  // AI 답변을 문제 목록으로 바꾼다.
+  // ctx: {type: 기본 유형, exam: 시험 이름, no: 기본 지문 번호}
+  function parseAiProblems(text, ctx) {
+    if (typeof ctx === "string" || ctx == null) ctx = { type: ctx };
+    var list = [];
+    extractJsonAll(text).forEach(function (data) {
+      var items = Array.isArray(data) ? data : data.problems;
+      if (Array.isArray(items)) list = list.concat(items);
+    });
+    if (!list.length) throw new Error("AI 답변에 problems 목록이 없습니다.");
     var warnings = [];
     var problems = list.map(function (p, i) {
-      var type = TYPE_BY_KEY[p.type] ? p.type : fallbackType;
+      var type = TYPE_BY_KEY[p.type] ? p.type : ctx.type;
       if (!TYPE_BY_KEY[type]) throw new Error((i + 1) + "번째 문제의 유형(type)을 알 수 없습니다.");
       var choices = Array.isArray(p.choices) && p.choices.length ? p.choices.map(String) : null;
       var label = TYPE_BY_KEY[type].name + " " + (i + 1) + "번째 문제";
       if (choices && choices.length !== 5) warnings.push(label + ": 선지가 " + choices.length + "개입니다.");
       if (!p.answer) warnings.push(label + ": 정답이 비어 있습니다.");
       if (!p.passage) warnings.push(label + ": 지문이 비어 있습니다.");
+      var no = normalizeNo(p.src != null ? p.src : ctx.no);
       return {
         type: type,
         instruction: p.instruction ? String(p.instruction) : TYPE_BY_KEY[type].instruction,
@@ -375,7 +422,8 @@
         passage: String(p.passage || ""),
         choices: choices,
         answer: normalizeAnswer(p.answer),
-        explanation: p.explanation ? String(p.explanation) : ""
+        explanation: p.explanation ? String(p.explanation) : "",
+        source: no ? { exam: ctx.exam || "", no: no } : null
       };
     });
     return { problems: problems, warnings: warnings };
@@ -408,35 +456,64 @@
 
   // ---------- 문서 구성 ----------
 
-  // 문제지를 서식 블록 목록으로 바꾼다. HTML 미리보기와 HWPX가 같은 블록을 쓴다.
-  // 블록: {kind: "title"|"question"|"box"|"para"|"choice"|"answer"|"pagebreak", runs}
+  // 원문 번호 표시. 문제지에 여러 시험의 지문이 섞여 있으면 시험 이름도 붙인다.
+  function sourceLabels(problems) {
+    var exams = {};
+    problems.forEach(function (p) { if (p.source && p.source.no) exams[p.source.exam || ""] = true; });
+    var mixed = Object.keys(exams).length > 1;
+    return problems.map(function (p) {
+      if (!p.source || !p.source.no) return "";
+      var no = /^\d/.test(p.source.no) ? p.source.no + "번" : p.source.no;
+      return (mixed && p.source.exam ? p.source.exam + " · " : "") + no;
+    });
+  }
+
+  var WRITE_TYPES = { arrange: true, compose: true, fix: true };
+
+  // 문제지를 서식 블록 목록으로 바꾼다. 화면 미리보기·PDF·HWPX·DOCX가 모두 같은 블록을 쓴다.
+  // 블록: {kind, runs, first?}. run: {text, u, b, role?, tab?}
+  // kind: eyebrow title nameLine | src ask box para choice answerLine | pagebreak ansTitle ans
   function buildBlocks(doc) {
     var blocks = [];
     var opts = doc.options || {};
-    blocks.push({ kind: "title", runs: [{ text: doc.title || "영어 변형문제", u: false, b: true }] });
-    if (doc.subtitle) blocks.push({ kind: "subtitle", runs: [{ text: doc.subtitle, u: false, b: false }] });
+    var layout = doc.layout || {};
+    function plain(text, role) { var r = { text: text, u: false, b: false }; if (role) r.role = role; return r; }
+
+    if (layout.eyebrow) blocks.push({ kind: "eyebrow", runs: [plain(layout.eyebrow)] });
+    blocks.push({ kind: "title", runs: [plain(doc.title || "영어 변형문제")] });
+    blocks.push({ kind: "nameLine", runs: [plain(layout.showName === false ? "" : "반 ________   번호 ________   이름 ________________")] });
+
+    var labels = sourceLabels(doc.problems);
     doc.problems.forEach(function (p, i) {
-      blocks.push({ kind: "question", runs: [{ text: (i + 1) + ". ", u: false, b: true }].concat(parseRuns(p.instruction).map(function (r) { return { text: r.text, u: r.u, b: true }; })) });
+      if (labels[i]) blocks.push({ kind: "src", runs: [plain(labels[i])] });
+      blocks.push({
+        kind: "ask",
+        first: !labels[i],
+        runs: [plain(String(i + 1), "num"), { text: "", u: false, b: false, tab: true }].concat(parseRuns(p.instruction))
+      });
       var boxBlocks = p.box ? String(p.box).split(/\n/).filter(function (l) { return l.trim(); }).map(function (l) { return { kind: "box", runs: parseRuns(l) }; }) : [];
       var paraBlocks = String(p.passage || "").split(/\n/).filter(function (l) { return l.trim(); }).map(function (l) { return { kind: "para", runs: parseRuns(l) }; });
       if (p.boxFirst) blocks.push.apply(blocks, boxBlocks.concat(paraBlocks));
       else blocks.push.apply(blocks, paraBlocks.concat(boxBlocks));
       if (p.choices) {
         p.choices.forEach(function (c, ci) {
-          blocks.push({ kind: "choice", runs: [{ text: CIRCLED[ci] + " ", u: false, b: false }].concat(parseRuns(c)) });
+          blocks.push({ kind: "choice", runs: [plain(CIRCLED[ci] + " ")].concat(parseRuns(c)) });
         });
       }
-      if (p.type === "arrange" || p.type === "compose" || p.type === "fix") {
-        blocks.push({ kind: "para", runs: [{ text: "답: ______________________________________________", u: false, b: false }] });
-      }
+      if (WRITE_TYPES[p.type]) blocks.push({ kind: "answerLine", runs: [plain("답: ______________________________________")] });
     });
-    if (opts.answers !== false) {
+
+    if (opts.answers !== false && doc.problems.length) {
       blocks.push({ kind: "pagebreak", runs: [] });
-      blocks.push({ kind: "title", runs: [{ text: "정답" + (opts.explanations ? " 및 해설" : ""), u: false, b: true }] });
+      blocks.push({ kind: "ansTitle", runs: [plain("정답" + (opts.explanations ? " 및 해설" : ""))] });
       doc.problems.forEach(function (p, i) {
-        var runs = [{ text: (i + 1) + ". ", u: false, b: true }, { text: p.answer || "-", u: false, b: true }];
-        if (opts.explanations && p.explanation) runs = runs.concat([{ text: "  " }]).concat(parseRuns(p.explanation));
-        blocks.push({ kind: "answer", runs: runs.map(function (r) { return { text: r.text, u: !!r.u, b: !!r.b }; }) });
+        var runs = [plain((i + 1) + ")", "ansNum"), plain(" ")].concat(parseRuns(p.answer || "-"));
+        if (labels[i]) runs.push(plain("  [" + labels[i] + "]", "explain"));
+        if (opts.explanations && p.explanation) {
+          runs.push(plain("  "));
+          runs = runs.concat(parseRuns(p.explanation).map(function (r) { r.role = "explain"; return r; }));
+        }
+        blocks.push({ kind: "ans", runs: runs });
       });
     }
     return blocks;
@@ -448,33 +525,78 @@
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
-  // 글자 모양 번호 (hwpx-template.js의 header.xml 참고)
-  function charId(run, kind) {
-    if (kind === "title") return 10;
-    if (kind === "subtitle") return 11;
-    if (run.b && run.u) return 9;
-    if (run.u) return 8;
-    if (run.b) return 7;
-    return 0;
+  var KIND_CHAR = {
+    eyebrow: "eyebrow", title: "title", nameLine: "name", src: "src", ask: "ask",
+    box: "body", para: "body", choice: "body", answerLine: "body", ansTitle: "ansTitle", ans: "ans"
+  };
+  var KIND_PARA = {
+    eyebrow: "eyebrow", title: "title", nameLine: "nameLine", src: "src", ask: "ask",
+    box: "box", para: "body", choice: "choice", answerLine: "answerLine", ansTitle: "ansTitle", ans: "ans"
+  };
+
+  // 굵게·밑줄 조합이 있는 글자 모양이면 그것을, 없으면 가장 가까운 것을 쓴다.
+  function styleName(table, base, run) {
+    var tries = [base + (run.b ? "B" : "") + (run.u ? "U" : ""), base + (run.u ? "U" : ""), base + (run.b ? "B" : ""), base];
+    for (var i = 0; i < tries.length; i++) if (table[tries[i]] !== undefined) return tries[i];
+    return base;
   }
 
-  var PARA_ID = { title: 22, subtitle: 22, question: 23, box: 20, para: 0, choice: 21, answer: 0, pagebreak: 0 };
+  function hwpxRuns(style, runs, kind) {
+    return runs.map(function (r) {
+      var id = style.char[styleName(style.char, r.role || KIND_CHAR[kind], r)];
+      if (r.tab) return '<hp:run charPrIDRef="' + id + '"><hp:t><hp:tab/></hp:t></hp:run>';
+      if (r.pageNum) return '<hp:run charPrIDRef="' + id + '"><hp:ctrl><hp:autoNum num="1" numType="PAGE"><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar="" supscript="0"/></hp:autoNum></hp:ctrl></hp:run>';
+      return '<hp:run charPrIDRef="' + id + '"><hp:t>' + xmlEscape(r.text) + "</hp:t></hp:run>";
+    }).join("");
+  }
 
-  function buildSectionXml(template, blocks, opts) {
-    opts = opts || {};
-    var secPr = template.__secPr;
-    if (opts.columns === 2) secPr = secPr.replace('colCount="1" sameSz="1" sameGap="0"', 'colCount="2" sameSz="1" sameGap="2268"');
-    var xml = [template.__secHead];
+  function colPrXml(count, rule) {
+    if (count === 2) {
+      return '<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="2" sameSz="1" sameGap="1984"><hp:colLine type="SOLID" width="0.12 mm" color="' + rule + '"/></hp:colPr></hp:ctrl>';
+    }
+    return '<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl>';
+  }
+
+  // 머리말·꼬리말 한 줄: 왼쪽 글 [가운데 탭] 가운데 [오른쪽 탭] 오른쪽 글
+  function hfRuns(left, center, right) {
+    var tab = { text: "", tab: true, role: "hf" };
+    return [{ text: left || "", role: "hf" }, tab].concat(center, [tab, { text: right || "", role: "hf" }]);
+  }
+
+  function buildSectionXml(template, blocks, doc) {
+    var style = template.__style;
+    var layout = (doc && doc.layout) || {};
+    var columns = doc && doc.options && doc.options.columns === 1 ? 1 : 2;
     var pid = 1;
-    var pendingBreak = false;
-    xml.push(secPr + "</hp:p>"); // secPr 조각은 첫 문단의 여는 태그부터 들어 있다
-    blocks.forEach(function (bl) {
+    function p(kind, runsXml, extra) {
+      var para = kind === "ask" && extra && extra.first ? "askFirst" : KIND_PARA[kind] || kind;
+      return '<hp:p id="' + (pid++) + '" paraPrIDRef="' + style.para[para] + '" styleIDRef="0" pageBreak="' + (extra && extra.pageBreak ? 1 : 0) + '" columnBreak="0" merged="0">' + runsXml + "</hp:p>";
+    }
+    function story(tag, vert, kind, runs) {
+      return '<hp:ctrl><hp:' + tag + ' id="' + (pid++) + '" applyPageType="BOTH"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="' + vert + '" linkListIDRef="0" linkListNextIDRef="0" textWidth="' + template.__bodyWidth + '" textHeight="2835" hasTextRef="0" hasNumRef="0">' +
+        p(kind, hwpxRuns(style, runs, kind)) + "</hp:subList></hp:" + tag + "></hp:ctrl>";
+    }
+
+    var header = layout.header || {}, footer = layout.footer || {};
+    var controls = colPrXml(1, template.__colRule);
+    if (header.left || header.right) controls += story("header", "TOP", "header", hfRuns(header.left, [], header.right));
+    controls += story("footer", "BOTTOM", "footer", hfRuns(footer.left, [{ text: "- ", role: "hf" }, { text: "", pageNum: true, role: "hf" }, { text: " -", role: "hf" }], footer.right));
+
+    // 첫 블록은 쪽 설정이 들어 있는 첫 문단에 함께 넣는다.
+    var first = blocks[0];
+    var firstPara = template.__firstPara.replace('paraPrIDRef="0"', 'paraPrIDRef="' + style.para[KIND_PARA[first.kind]] + '"');
+    var xml = [template.__secHead, firstPara + controls + "</hp:run>" + hwpxRuns(style, first.runs, first.kind) + "</hp:p>"];
+
+    var pendingBreak = false, columnsStarted = columns === 1;
+    blocks.slice(1).forEach(function (bl) {
       if (bl.kind === "pagebreak") { pendingBreak = true; return; }
-      var runs = bl.runs.length ? bl.runs : [{ text: "" }];
-      var body = runs.map(function (r) {
-        return '<hp:run charPrIDRef="' + charId(r, bl.kind) + '"><hp:t>' + xmlEscape(r.text) + "</hp:t></hp:run>";
-      }).join("");
-      xml.push('<hp:p id="' + (pid++) + '" paraPrIDRef="' + PARA_ID[bl.kind] + '" styleIDRef="0" pageBreak="' + (pendingBreak ? 1 : 0) + '" columnBreak="0" merged="0">' + body + "</hp:p>");
+      var runsXml = hwpxRuns(style, bl.runs, bl.kind);
+      // 머리 부분(제목) 다음부터 2단으로 나눈다.
+      if (!columnsStarted && bl.kind !== "eyebrow" && bl.kind !== "title" && bl.kind !== "nameLine") {
+        runsXml = '<hp:run charPrIDRef="0">' + colPrXml(2, template.__colRule) + "</hp:run>" + runsXml;
+        columnsStarted = true;
+      }
+      xml.push(p(bl.kind, runsXml, { pageBreak: pendingBreak, first: bl.first }));
       pendingBreak = false;
     });
     xml.push("</hs:sec>");
@@ -528,8 +650,8 @@
 
   function buildHwpx(template, doc) {
     var blocks = buildBlocks(doc);
-    var section = buildSectionXml(template, blocks, doc.options);
-    var preview = blocks.map(function (b) { return b.runs.map(function (r) { return r.text; }).join(""); }).join("\n").slice(0, 1000);
+    var section = buildSectionXml(template, blocks, doc);
+    var preview = blocks.map(function (b) { return b.runs.map(function (r) { return r.text || ""; }).join(""); }).join("\n").slice(0, 1000);
     var hpf = template["Contents/content.hpf"].replace("<opf:title/>", "<opf:title>" + xmlEscape(doc.title || "") + "</opf:title>");
     var order = ["mimetype", "version.xml", "Contents/header.xml", "Contents/section0.xml", "settings.xml", "Preview/PrvText.txt", "META-INF/container.rdf", "Contents/content.hpf", "META-INF/container.xml", "META-INF/manifest.xml"];
     var contents = {
@@ -544,57 +666,101 @@
 
   // ---------- DOCX (한글에서도 바로 열리는 Word 문서) ----------
 
+  var NAVY = "1D3A6B";
+  var DOTUM = "함초롬돋움", BATANG = "함초롬바탕", EN = "Times New Roman";
+
+  // 글자 모양: [한글 글꼴, 크기(pt), 굵게, 색]
+  var DOCX_CHAR = {
+    body: [BATANG, 10], ask: [DOTUM, 10, true], num: [BATANG, 17, false, NAVY], src: [DOTUM, 8, true, "6B7688"],
+    title: [BATANG, 18, true], eyebrow: [DOTUM, 8.5, true, NAVY], name: [DOTUM, 9], hf: [DOTUM, 8, false, "555555"],
+    ansTitle: [BATANG, 14, true], ansNum: [BATANG, 9.5, true, NAVY], ans: [BATANG, 9.5], explain: [BATANG, 8.5, false, "444444"]
+  };
+
+  // 문단 모양 (단위: twip, 1mm ≈ 56.7)
+  var ASK_TWIP = 340;
   var DOCX_PARA = {
-    title: '<w:jc w:val="center"/><w:spacing w:after="120"/>',
-    subtitle: '<w:jc w:val="center"/><w:spacing w:after="240"/>',
-    question: '<w:keepNext/><w:spacing w:before="280" w:after="80"/>',
-    box: '<w:pBdr><w:top w:val="single" w:sz="4" w:space="4" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="6" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="4" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="6" w:color="000000"/></w:pBdr><w:spacing w:before="60" w:after="60"/><w:ind w:left="200" w:right="120"/><w:jc w:val="both"/>',
+    eyebrow: '<w:spacing w:after="0" w:line="264" w:lineRule="auto"/>',
+    title: '<w:spacing w:after="40" w:line="264" w:lineRule="auto"/>',
+    nameLine: '<w:pBdr><w:bottom w:val="single" w:sz="16" w:space="4" w:color="' + NAVY + '"/></w:pBdr><w:spacing w:after="240"/><w:jc w:val="right"/>',
+    src: '<w:keepNext/><w:spacing w:before="220" w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="' + ASK_TWIP + '"/>',
+    ask: '<w:keepNext/><w:tabs><w:tab w:val="left" w:pos="' + ASK_TWIP + '"/></w:tabs><w:spacing w:after="60" w:line="300" w:lineRule="auto"/><w:ind w:left="' + ASK_TWIP + '" w:hanging="' + ASK_TWIP + '"/>',
+    askFirst: '<w:keepNext/><w:tabs><w:tab w:val="left" w:pos="' + ASK_TWIP + '"/></w:tabs><w:spacing w:before="220" w:after="60" w:line="300" w:lineRule="auto"/><w:ind w:left="' + ASK_TWIP + '" w:hanging="' + ASK_TWIP + '"/>',
+    box: '<w:shd w:val="clear" w:color="auto" w:fill="EEF2F8"/><w:spacing w:before="30" w:after="30"/><w:ind w:left="70" w:right="70"/><w:jc w:val="both"/>',
     para: '<w:jc w:val="both"/>',
-    choice: '<w:ind w:left="400"/>',
-    answer: ''
+    choice: '<w:ind w:left="220" w:hanging="220"/>',
+    answerLine: '<w:spacing w:before="40"/><w:ind w:left="' + ASK_TWIP + '"/>',
+    ansTitle: '<w:spacing w:after="100"/><w:jc w:val="center"/>',
+    ans: '<w:spacing w:after="20" w:line="290" w:lineRule="auto"/><w:ind w:left="260" w:hanging="260"/>'
   };
 
   function docxRun(run, kind) {
-    var props = "";
-    if (run.b || kind === "title") props += "<w:b/>";
+    if (run.tab) return "<w:r><w:tab/></w:r>";
+    var c = DOCX_CHAR[run.role || KIND_CHAR[kind]] || DOCX_CHAR.body;
+    var props = '<w:rFonts w:ascii="' + EN + '" w:hAnsi="' + EN + '" w:eastAsia="' + c[0] + '" w:cs="' + EN + '"/>';
+    if (run.b || c[2]) props += "<w:b/>";
+    if (c[3]) props += '<w:color w:val="' + c[3] + '"/>';
+    props += '<w:sz w:val="' + Math.round(c[1] * 2) + '"/><w:szCs w:val="' + Math.round(c[1] * 2) + '"/>';
     if (run.u) props += '<w:u w:val="single"/>';
-    if (kind === "title") props += '<w:sz w:val="30"/><w:szCs w:val="30"/>';
-    if (kind === "subtitle") props += '<w:sz w:val="18"/><w:szCs w:val="18"/>';
-    return "<w:r>" + (props ? "<w:rPr>" + props + "</w:rPr>" : "") + '<w:t xml:space="preserve">' + xmlEscape(run.text) + "</w:t></w:r>";
+    if (run.pageNum) return '<w:fldSimple w:instr="PAGE"><w:r><w:rPr>' + props + "</w:rPr><w:t>1</w:t></w:r></w:fldSimple>";
+    return "<w:r><w:rPr>" + props + '</w:rPr><w:t xml:space="preserve">' + xmlEscape(run.text) + "</w:t></w:r>";
   }
 
-  function buildDocxBody(blocks, opts) {
+  var BODY_TWIP = 10206; // A4 폭 - 좌우 15mm
+  function docxSectPr(cols) {
+    return '<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/>' +
+      '<w:type w:val="continuous"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="850" w:bottom="1134" w:left="850" w:header="567" w:footer="567" w:gutter="0"/>' +
+      (cols === 2 ? '<w:cols w:num="2" w:space="567" w:sep="1"/>' : '<w:cols w:space="425"/>') + "</w:sectPr>";
+  }
+
+  function buildDocxBody(blocks, doc) {
+    var columns = doc.options && doc.options.columns === 1 ? 1 : 2;
     var out = [];
     var pendingBreak = false;
-    blocks.forEach(function (bl) {
+    blocks.forEach(function (bl, i) {
       if (bl.kind === "pagebreak") { pendingBreak = true; return; }
-      var ppr = (pendingBreak ? "<w:pageBreakBefore/>" : "") + DOCX_PARA[bl.kind];
+      var key = bl.kind === "ask" && bl.first ? "askFirst" : bl.kind;
+      var ppr = (pendingBreak ? "<w:pageBreakBefore/>" : "") + DOCX_PARA[key];
+      // 제목 부분은 1단 구역, 그 뒤는 2단 구역
+      if (bl.kind === "nameLine" && columns === 2) ppr += docxSectPr(1);
       pendingBreak = false;
-      out.push("<w:p>" + (ppr ? "<w:pPr>" + ppr + "</w:pPr>" : "") + bl.runs.map(function (r) { return docxRun(r, bl.kind); }).join("") + "</w:p>");
+      out.push("<w:p><w:pPr>" + ppr + "</w:pPr>" + bl.runs.map(function (r) { return docxRun(r, bl.kind); }).join("") + "</w:p>");
     });
-    var cols = opts && opts.columns === 2 ? '<w:cols w:num="2" w:space="567"/>' : '<w:cols w:space="425"/>';
-    out.push('<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/>' + cols + "</w:sectPr>");
+    out.push(docxSectPr(columns));
     return out.join("");
+  }
+
+  function docxStory(tag, kind, runs, border) {
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:' + tag + ' xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      "<w:p><w:pPr><w:pBdr>" + border + '</w:pBdr><w:tabs><w:tab w:val="center" w:pos="' + BODY_TWIP / 2 + '"/><w:tab w:val="right" w:pos="' + BODY_TWIP + '"/></w:tabs></w:pPr>' +
+      runs.map(function (r) { return docxRun(r, kind); }).join("") + "</w:p></w:" + tag + ">";
   }
 
   var DOCX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
-    '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="바탕" w:cs="Times New Roman"/><w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="en-US" w:eastAsia="ko-KR"/></w:rPr></w:rPrDefault>' +
-    '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="336" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
+    '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="함초롬바탕" w:cs="Times New Roman"/><w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="en-US" w:eastAsia="ko-KR"/></w:rPr></w:rPrDefault>' +
+    '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="384" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
     '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>';
 
   function buildDocx(doc) {
     var blocks = buildBlocks(doc);
+    var layout = doc.layout || {};
+    var header = layout.header || {}, footer = layout.footer || {};
     var documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>' +
-      buildDocxBody(blocks, doc.options) + "</w:body></w:document>";
+      buildDocxBody(blocks, doc) + "</w:body></w:document>";
+    var headerXml = docxStory("hdr", "header", hfRuns(header.left, [], header.right),
+      header.left || header.right ? '<w:bottom w:val="single" w:sz="4" w:space="4" w:color="999999"/>' : "");
+    var footerXml = docxStory("ftr", "footer", hfRuns(footer.left, [{ text: "- ", role: "hf" }, { text: "", pageNum: true, role: "hf" }, { text: " -", role: "hf" }], footer.right),
+      '<w:top w:val="single" w:sz="4" w:space="4" w:color="' + NAVY + '"/>');
     return makeZip([
-      { name: "[Content_Types].xml", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>' },
+      { name: "[Content_Types].xml", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>' },
       { name: "_rels/.rels", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>' },
       { name: "docProps/core.xml", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>' + xmlEscape(doc.title || "") + "</dc:title></cp:coreProperties>" },
-      { name: "word/_rels/document.xml.rels", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+      { name: "word/_rels/document.xml.rels", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>' },
       { name: "word/document.xml", data: documentXml },
-      { name: "word/styles.xml", data: DOCX_STYLES }
+      { name: "word/styles.xml", data: DOCX_STYLES },
+      { name: "word/header1.xml", data: headerXml },
+      { name: "word/footer1.xml", data: footerXml }
     ]);
   }
 
@@ -610,8 +776,11 @@
     AUTO_MAKERS: AUTO_MAKERS,
     buildPrompt: buildPrompt,
     buildCombinedPrompt: buildCombinedPrompt,
+    parseBulkPassages: parseBulkPassages,
+    normalizeNo: normalizeNo,
     parseAiProblems: parseAiProblems,
     parseRuns: parseRuns,
+    sourceLabels: sourceLabels,
     buildBlocks: buildBlocks,
     buildSectionXml: buildSectionXml,
     makeZip: makeZip,

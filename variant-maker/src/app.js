@@ -3,18 +3,29 @@
   "use strict";
 
   var SAMPLE = "Many people believe that creativity is a rare gift given to only a few. However, research suggests that creative thinking is more like a muscle that grows stronger with regular use. When we practice looking at familiar problems from new angles, our brains form connections that did not exist before. For example, a designer who sketches ten rough ideas each morning soon finds that unusual solutions come more easily. This habit works because quantity eventually leads to quality. Most of the early ideas will be ordinary, but a few will surprise even their creator. Such surprises rarely appear when we wait passively for inspiration. Instead, they tend to emerge in the middle of steady, sometimes boring, effort. Therefore, anyone who wants to be more creative should treat imagination as a daily practice rather than a lucky accident.";
-  var STORE_KEY = "variant-maker-v1";
-  var HTML2PDF_URL = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+  var STATE_KEY = "variant-maker-v2";
+  var LIB_KEY = "variant-maker-library-v1";
+  var LIBS = {
+    html2canvas: "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
+    jspdf: "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+  };
+  var PROMPT_PASSAGES = 3; // 수동 요청문 하나에 넣는 지문 수
 
   function $(id) { return document.getElementById(id); }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
-  var state = { problems: [], selection: {} };
-  var pendingAi = []; // 수동 붙여넣기를 기다리는 AI 유형 [{type, count}]
-  var sampleFn = null;
-  var downloadsCap = null;
-  var aborter = null;
+  var state = {
+    problems: [], selection: {},
+    layout: { title: "영어 변형문제", eyebrow: "ENGLISH · 변형문제", headerLeft: "", headerRight: "", footerLeft: "", footerRight: "", showName: true },
+    options: { columns: 2, answers: true, explanations: true }
+  };
+  var lib = { exams: [], currentExam: null };
+  var editing = null;        // 편집 중인 지문 id (null이면 새 지문)
+  var checked = {};          // 문제를 만들 지문 id
+  var examForm = null;       // "new" | "rename"
+  var pendingCtx = null;     // 수동 AI 붙여넣기를 기다리는 {exam, passages}
+  var sampleFn = null, downloadsCap = null, aborter = null;
 
-  // Claude 화면 안에서 열렸을 때만 쓸 수 있는 기능 (AI 바로 만들기, 파일 저장 확인창)
   if (window.claude && typeof window.claude.use === "function") {
     window.claude.use("sample").then(function (s) { sampleFn = s; updateManualIntro(); }).catch(function () {});
     window.claude.use("downloads").then(function (d) { downloadsCap = d; updateSaveHint(); }).catch(function () {});
@@ -22,43 +33,223 @@
 
   // ---------- 저장 ----------
 
-  function load() {
+  function loadJson(key) {
+    try { var raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  }
+  function saveJson(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* 저장 공간을 못 쓰는 환경 */ }
+  }
+  function saveState() {
+    saveJson(STATE_KEY, { problems: state.problems, selection: state.selection, layout: state.layout, options: state.options, checked: checked, byLine: $("by-line").checked });
+  }
+  function saveLib() { saveJson(LIB_KEY, lib); }
+
+  // ---------- 알림 ----------
+
+  function show(el, kind, text) {
+    el.hidden = !text;
+    el.className = "msg " + (kind || "");
+    el.textContent = text || "";
+  }
+
+  // ---------- 지문 보관함 ----------
+
+  function currentExam() {
+    return lib.exams.filter(function (e) { return e.id === lib.currentExam; })[0] || null;
+  }
+
+  function sortPassages(list) {
+    return list.slice().sort(function (a, b) {
+      var na = parseInt(a.no, 10), nb = parseInt(b.no, 10);
+      if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+      return String(a.no).localeCompare(String(b.no));
+    });
+  }
+
+  function renderExams() {
+    var sel = $("exam");
+    sel.textContent = "";
+    lib.exams.forEach(function (e) {
+      var o = document.createElement("option");
+      o.value = e.id; o.textContent = e.name + " (" + e.passages.length + ")";
+      sel.appendChild(o);
+    });
+    if (!lib.exams.length) {
+      var o = document.createElement("option");
+      o.value = ""; o.textContent = "시험이 없어요. ‘새 시험’을 눌러 만드세요.";
+      sel.appendChild(o);
+    }
+    sel.value = lib.currentExam || "";
+    $("exam-rename").disabled = $("exam-delete").disabled = !currentExam();
+    renderChips();
+  }
+
+  function renderChips() {
+    var box = $("chips");
+    box.textContent = "";
+    var exam = currentExam();
+    var list = exam ? sortPassages(exam.passages) : [];
+    var n = list.filter(function (p) { return checked[p.id]; }).length;
+    $("chips-count").textContent = exam ? "지문 " + list.length + "개 · " + n + "개 선택" : "";
+    if (!list.length) {
+      var e = document.createElement("span");
+      e.className = "empty-chip";
+      e.textContent = exam ? "아직 등록한 지문이 없어요. 아래에 번호와 지문을 넣고 ‘지문 저장’을 누르세요." : "먼저 시험을 만드세요.";
+      box.appendChild(e);
+    }
+    list.forEach(function (p) {
+      var chip = document.createElement("span");
+      chip.className = "chip" + (checked[p.id] ? " checked" : "") + (editing === p.id ? " editing" : "");
+      var cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = !!checked[p.id]; cb.id = "chip-" + p.id;
+      cb.setAttribute("aria-label", p.no + "번 지문 선택");
+      cb.addEventListener("change", function () {
+        if (cb.checked) checked[p.id] = true; else delete checked[p.id];
+        saveState(); renderChips(); updateTarget();
+      });
+      var b = document.createElement("button");
+      b.type = "button"; b.textContent = /^\d/.test(p.no) ? p.no + "번" : p.no;
+      b.title = p.text.slice(0, 80);
+      b.addEventListener("click", function () { editPassage(p.id); });
+      chip.append(cb, b);
+      box.appendChild(chip);
+    });
+    updateTarget();
+  }
+
+  function editPassage(id) {
+    var exam = currentExam();
+    var p = exam && exam.passages.filter(function (x) { return x.id === id; })[0];
+    editing = p ? p.id : null;
+    $("p-no").value = p ? p.no : "";
+    $("passage").value = p ? p.text : "";
+    $("p-delete").disabled = !p;
+    renderSentences(); renderChips();
+  }
+
+  function savePassage() {
+    var exam = currentExam();
+    if (!exam) return show($("lib-status"), "err", "먼저 ‘새 시험’으로 시험을 만드세요.");
+    var no = VM.normalizeNo($("p-no").value);
+    var text = $("passage").value.trim();
+    if (!no) return show($("lib-status"), "err", "지문 번호를 넣어 주세요. 예: 29, 41-42");
+    if (!text) return show($("lib-status"), "err", "지문을 넣어 주세요.");
+    var same = exam.passages.filter(function (p) { return p.no === no && p.id !== editing; })[0];
+    var target = exam.passages.filter(function (p) { return p.id === editing; })[0] || same;
+    if (target) {
+      if (same && same !== target) exam.passages = exam.passages.filter(function (p) { return p !== same; });
+      target.no = no; target.text = text;
+    } else {
+      target = { id: uid(), no: no, text: text };
+      exam.passages.push(target);
+    }
+    editing = target.id;
+    saveLib(); renderExams();
+    show($("lib-status"), "ok", no + "번 지문을 저장했어요.");
+  }
+
+  function deletePassage() {
+    var exam = currentExam();
+    if (!exam || !editing) return;
+    var p = exam.passages.filter(function (x) { return x.id === editing; })[0];
+    exam.passages = exam.passages.filter(function (x) { return x.id !== editing; });
+    delete checked[editing];
+    saveLib(); saveState(); editPassage(null); renderExams();
+    show($("lib-status"), "ok", (p ? p.no + "번 " : "") + "지문을 지웠어요.");
+  }
+
+  function openExamForm(kind) {
+    examForm = kind;
+    $("exam-form").hidden = false;
+    $("exam-form-label").textContent = kind === "new" ? "새 시험 이름" : "바꿀 이름";
+    $("exam-name").value = kind === "rename" && currentExam() ? currentExam().name : "";
+    $("exam-name").focus();
+  }
+
+  function submitExamForm() {
+    var name = $("exam-name").value.trim();
+    if (!name) return $("exam-name").focus();
+    if (examForm === "new") {
+      var e = { id: uid(), name: name, passages: [] };
+      lib.exams.push(e);
+      lib.currentExam = e.id;
+      editPassage(null);
+    } else if (currentExam()) {
+      currentExam().name = name;
+    }
+    examForm = null;
+    $("exam-form").hidden = true;
+    saveLib(); renderExams();
+  }
+
+  function deleteExam() {
+    var exam = currentExam();
+    if (!exam) return;
+    lib.exams = lib.exams.filter(function (e) { return e !== exam; });
+    lib.currentExam = lib.exams.length ? lib.exams[0].id : null;
+    $("exam-confirm").hidden = true;
+    saveLib(); editPassage(null); renderExams();
+    show($("lib-status"), "ok", "‘" + exam.name + "’ 시험을 지웠어요.");
+  }
+
+  function bulkAdd() {
+    var exam = currentExam();
+    if (!exam) return show($("lib-status"), "err", "먼저 ‘새 시험’으로 시험을 만드세요.");
+    var list = VM.parseBulkPassages($("bulk").value);
+    if (!list.length) return show($("lib-status"), "err", "번호 줄([18] 또는 18번)을 찾지 못했어요. 지문마다 번호 줄을 먼저 써 주세요.");
+    var replaced = 0;
+    list.forEach(function (p) {
+      var old = exam.passages.filter(function (x) { return x.no === p.no; })[0];
+      if (old) { old.text = p.text; replaced++; }
+      else exam.passages.push({ id: uid(), no: p.no, text: p.text });
+    });
+    $("bulk").value = "";
+    saveLib(); renderExams();
+    show($("lib-status"), "ok", "지문 " + list.length + "개를 등록했어요" + (replaced ? " (" + replaced + "개는 바꿈)" : "") + ": " + list.map(function (p) { return p.no; }).join(", "));
+  }
+
+  async function exportLib() {
+    var blob = new Blob([JSON.stringify(lib, null, 1)], { type: "application/json" });
     try {
-      var raw = localStorage.getItem(STORE_KEY);
-      if (!raw) return false;
-      var s = JSON.parse(raw);
-      state.problems = Array.isArray(s.problems) ? s.problems : [];
-      state.selection = s.selection || {};
-      $("passage").value = s.passage || "";
-      $("title").value = s.title || "영어 변형문제";
-      $("subtitle").value = s.subtitle || "";
-      $("by-line").checked = !!s.byLine;
-      return true;
-    } catch (e) { return false; }
+      var r = await offerFile("변형문제 지문 보관함.json", blob);
+      if (r !== "declined") show($("lib-status"), "ok", "보관함을 파일로 저장했어요.");
+    } catch (e) { show($("lib-status"), "err", "저장에 실패했어요: " + (e.message || e.code)); }
   }
 
-  function save() {
-    try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({
-        problems: state.problems, selection: state.selection,
-        passage: $("passage").value, title: $("title").value, subtitle: $("subtitle").value, byLine: $("by-line").checked
-      }));
-    } catch (e) { /* 저장 공간을 못 쓰는 환경 */ }
+  function importLib(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var data = JSON.parse(reader.result);
+        if (!data || !Array.isArray(data.exams)) throw new Error("보관함 파일이 아니에요.");
+        var added = 0;
+        data.exams.forEach(function (e) {
+          if (!e || !e.name || !Array.isArray(e.passages)) return;
+          var mine = lib.exams.filter(function (x) { return x.name === e.name; })[0];
+          if (!mine) { mine = { id: uid(), name: e.name, passages: [] }; lib.exams.push(mine); }
+          e.passages.forEach(function (p) {
+            if (!p || !p.no || !p.text) return;
+            var old = mine.passages.filter(function (x) { return x.no === p.no; })[0];
+            if (old) old.text = p.text; else mine.passages.push({ id: uid(), no: String(p.no), text: String(p.text) });
+            added++;
+          });
+        });
+        if (!lib.currentExam && lib.exams.length) lib.currentExam = lib.exams[0].id;
+        saveLib(); renderExams();
+        show($("lib-status"), "ok", "지문 " + added + "개를 불러왔어요.");
+      } catch (err) { show($("lib-status"), "err", "불러오지 못했어요: " + err.message); }
+    };
+    reader.readAsText(file);
   }
 
-  // ---------- 지문 ----------
-
-  function sentences() {
-    return VM.splitSentences($("passage").value, $("by-line").checked);
-  }
+  // ---------- 지문 확인 ----------
 
   function renderSentences() {
-    var list = sentences();
+    var list = VM.splitSentences($("passage").value, $("by-line").checked);
     $("sent-summary").textContent = "문장 나누기 확인 (" + list.length + "문장)";
     var ol = $("sentences");
     ol.textContent = "";
     list.forEach(function (s) { var li = document.createElement("li"); li.textContent = s; ol.appendChild(li); });
-    $("sample-note").hidden = $("passage").value.trim() !== SAMPLE;
   }
 
   // ---------- 유형 선택 ----------
@@ -83,7 +274,7 @@
       cb.addEventListener("change", function () { setSel(t.key, cb.checked, num.value); row.classList.toggle("on", cb.checked); });
       num.addEventListener("input", function () {
         if (!cb.checked) { cb.checked = true; row.classList.add("on"); }
-        setSel(t.key, cb.checked, num.value);
+        setSel(t.key, true, num.value);
       });
       row.append(cb, name, num);
       box.appendChild(row);
@@ -91,97 +282,164 @@
   }
 
   function setSel(key, on, count) {
-    var n = Math.max(1, Math.min(5, parseInt(count, 10) || 1));
-    state.selection[key] = { on: on, count: n };
-    save();
+    state.selection[key] = { on: on, count: Math.max(1, Math.min(5, parseInt(count, 10) || 1)) };
+    saveState(); updateTarget();
   }
 
-  function selected() {
+  function selectedTypes() {
     return VM.TYPES.filter(function (t) { return state.selection[t.key] && state.selection[t.key].on; })
       .map(function (t) { return { type: t.key, count: state.selection[t.key].count, mode: t.mode, name: t.name }; });
   }
 
-  // ---------- 알림 ----------
+  // 문제를 만들 지문: 보관함에서 체크한 지문, 없으면 편집 칸의 지문
+  function targetPassages() {
+    var exam = currentExam();
+    var list = exam ? sortPassages(exam.passages.filter(function (p) { return checked[p.id]; })) : [];
+    if (list.length) return { exam: exam.name, passages: list, fromLibrary: true };
+    var text = $("passage").value.trim();
+    if (!text) return { exam: "", passages: [] };
+    return { exam: exam ? exam.name : "", passages: [{ no: VM.normalizeNo($("p-no").value), text: text }], fromLibrary: false };
+  }
 
-  function show(el, kind, text) {
-    el.hidden = !text;
-    el.className = "msg " + (kind || "");
-    el.textContent = text || "";
+  function updateTarget() {
+    var t = targetPassages();
+    var types = selectedTypes();
+    var per = types.reduce(function (s, x) { return s + x.count; }, 0);
+    var names = t.passages.map(function (p) { return p.no ? p.no + "번" : "편집 중인 지문"; });
+    $("make-target").textContent = t.passages.length
+      ? "대상: " + (names.length > 8 ? names.slice(0, 8).join(", ") + " 외 " + (names.length - 8) + "개" : names.join(", ")) + " · 약 " + (per * t.passages.length) + "문제"
+      : "지문을 체크하거나 편집 칸에 지문을 넣어 주세요.";
   }
 
   // ---------- 만들기 ----------
 
+  function srcOf(exam, p) { return p.no ? { exam: exam, no: p.no } : null; }
+
+  // 같은 지문에서 나온 문제끼리 모이도록, 그 지문의 마지막 문제 뒤에 넣는다.
+  function insertProblems(list) {
+    list.forEach(function (p) {
+      var at = -1;
+      if (p.source) {
+        for (var i = state.problems.length - 1; i >= 0; i--) {
+          var s = state.problems[i].source;
+          if (s && s.no === p.source.no && s.exam === p.source.exam) { at = i; break; }
+        }
+      }
+      if (at < 0) state.problems.push(p); else state.problems.splice(at + 1, 0, p);
+    });
+  }
+
   function make() {
-    var list = sentences();
-    var picks = selected();
-    if (!list.length) return show($("status"), "err", "지문을 먼저 넣어 주세요.");
-    if (!picks.length) return show($("status"), "err", "만들 유형을 하나 이상 골라 주세요.");
+    var target = targetPassages();
+    var types = selectedTypes();
+    if (!target.passages.length) return show($("status"), "err", "지문을 체크하거나 편집 칸에 지문을 넣어 주세요.");
+    if (!types.length) return show($("status"), "err", "만들 유형을 하나 이상 골라 주세요.");
 
     var rng = VM.makeRng();
+    var byLine = $("by-line").checked && !target.fromLibrary;
     var made = 0, errors = [];
-    picks.filter(function (p) { return p.mode === "auto"; }).forEach(function (p) {
-      try {
-        var ps = VM.AUTO_MAKERS[p.type](list, p.count, rng);
-        state.problems = state.problems.concat(ps);
-        made += ps.length;
-      } catch (e) { errors.push(p.name + ": " + e.message); }
+    target.passages.forEach(function (p) {
+      var sents = VM.splitSentences(p.text, byLine);
+      types.filter(function (t) { return t.mode === "auto"; }).forEach(function (t) {
+        try {
+          var ps = VM.AUTO_MAKERS[t.type](sents, t.count, rng);
+          ps.forEach(function (x) { x.source = srcOf(target.exam, p); });
+          insertProblems(ps);
+          made += ps.length;
+        } catch (e) { errors.push((p.no ? p.no + "번 " : "") + t.name + ": " + e.message); }
+      });
     });
-    if (made) { save(); renderSheet(); }
+    if (made) { saveState(); renderPages(); }
 
-    var ai = picks.filter(function (p) { return p.mode === "ai"; });
-    var parts = [];
-    if (made) parts.push("자동 유형 " + made + "문제를 추가했어요.");
-    if (errors.length) parts.push(errors.join(" "));
-    show($("status"), errors.length ? "err" : "ok", parts.join(" "));
-
+    var ai = types.filter(function (t) { return t.mode === "ai"; });
+    var prefix = [];
+    if (made) prefix.push("자동 유형 " + made + "문제를 추가했어요.");
+    if (errors.length) prefix.push(errors.join(" "));
+    show($("status"), errors.length ? "warn" : "ok", prefix.join(" "));
     if (!ai.length) { $("manual").hidden = true; return; }
-    pendingAi = ai;
-    var passage = $("passage").value;
-    $("prompt-out").value = VM.buildCombinedPrompt(passage, ai.map(function (a) { return { type: a.type, count: a.count }; }));
-    $("ai-in").value = "";
-    $("copy-state").textContent = "";
+
+    pendingCtx = target;
+    renderPrompts(target, ai);
     if (sampleFn) {
       $("manual").hidden = true;
-      runAi(ai, passage, parts);
+      runAi(target, ai, prefix);
     } else {
       $("manual").hidden = false;
-      show($("status"), errors.length ? "err" : "ok", parts.concat(["AI 유형은 아래 순서대로 진행해 주세요."]).join(" "));
+      show($("status"), errors.length ? "warn" : "ok", prefix.concat(["AI 유형은 아래 순서대로 진행해 주세요."]).join(" "));
     }
+  }
+
+  function renderPrompts(target, ai) {
+    var box = $("prompts");
+    box.textContent = "";
+    var reqs = ai.map(function (a) { return { type: a.type, count: a.count }; });
+    for (var i = 0; i < target.passages.length; i += PROMPT_PASSAGES) {
+      var chunk = target.passages.slice(i, i + PROMPT_PASSAGES);
+      var text = VM.buildCombinedPrompt(chunk, reqs);
+      var row = document.createElement("div");
+      row.className = "prompt-item";
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = "① 요청문 복사" + (target.passages.length > PROMPT_PASSAGES ? " (" + chunk.map(function (p) { return p.no || "지문"; }).join(", ") + ")" : "");
+      var note = document.createElement("span");
+      note.className = "hint";
+      b.addEventListener("click", copier(text, note));
+      row.append(b, note);
+      box.appendChild(row);
+    }
+  }
+
+  function copier(text, note) {
+    return function () {
+      var done = function () { note.textContent = "복사했어요. Claude 채팅에 붙여 넣으세요."; };
+      var fallback = function () {
+        var ta = document.createElement("textarea");
+        ta.value = text; ta.className = "mono"; ta.rows = 4; ta.readOnly = true;
+        note.textContent = "";
+        note.appendChild(ta);
+        ta.focus(); ta.select();
+        note.appendChild(document.createTextNode(" 선택된 글자를 Ctrl+C(⌘+C)로 복사하세요."));
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+      else fallback();
+    };
   }
 
   function updateManualIntro() {
     if (sampleFn) $("manual-intro").textContent = "AI로 바로 만들기가 안 될 때는 요청문을 복사해 Claude 채팅에 붙여 넣고, 답변 전체를 아래 칸에 붙여 넣은 뒤 불러오기를 누르세요.";
   }
 
-  // Claude 화면 안에서는 유형별로 한 번씩 Claude에게 바로 요청한다.
-  async function runAi(ai, passage, prefix) {
-    var done = [], failed = [];
+  // Claude 화면 안에서는 지문·유형별로 한 번씩 Claude에게 바로 요청한다.
+  async function runAi(target, ai, prefix) {
+    var jobs = [];
+    target.passages.forEach(function (p) { ai.forEach(function (a) { jobs.push({ p: p, a: a }); }); });
+    var done = 0, failed = [];
     $("make").disabled = true;
     $("stop").hidden = false;
-    for (var i = 0; i < ai.length; i++) {
-      var a = ai[i];
+    for (var i = 0; i < jobs.length; i++) {
+      var job = jobs[i];
       aborter = new AbortController();
-      show($("status"), "", prefix.concat(["AI가 [" + a.name + "] " + a.count + "문제를 만드는 중이에요 (" + (i + 1) + "/" + ai.length + "). 한 유형에 30초~1분쯤 걸려요."]).join(" "));
+      show($("status"), "", prefix.concat(["AI가 문제를 만드는 중이에요 (" + (i + 1) + "/" + jobs.length + ": " + (job.p.no ? job.p.no + "번 " : "") + job.a.name + "). 하나에 30초~1분쯤 걸려요."]).join(" "));
       try {
-        var data = await sampleFn.json(VM.buildPrompt(passage, a.type, a.count), { signal: aborter.signal });
-        var res = VM.parseAiProblems(data, a.type);
-        res.problems.forEach(function (p) { p.type = a.type; });
-        state.problems = state.problems.concat(res.problems);
-        save(); renderSheet();
-        done.push(a.name + " " + res.problems.length + "문제");
+        var data = await sampleFn.json(VM.buildPrompt(job.p.text, job.a.type, job.a.count), { signal: aborter.signal });
+        var res = VM.parseAiProblems(data, { type: job.a.type, exam: target.exam, no: job.p.no });
+        res.problems.forEach(function (x) { x.type = job.a.type; x.source = srcOf(target.exam, job.p); });
+        insertProblems(res.problems);
+        saveState(); renderPages();
+        done += res.problems.length;
         if (res.warnings.length) failed.push(res.warnings.join(" "));
       } catch (e) {
         if (e && e.code === "cancelled") { failed.push("멈췄어요."); break; }
         if (e && e.code === "not_granted") { failed.push("Claude 사용을 허용하지 않아 AI 유형을 만들지 못했어요. 아래 요청문으로 직접 만들 수 있어요."); $("manual").hidden = false; break; }
-        if (e && e.code === "rate_limited") { failed.push("요청이 많아 잠시 막혔어요. 1~2분 뒤 다시 눌러 주세요."); break; }
-        failed.push("[" + a.name + "] 만들기에 실패했어요" + (e && e.code === "invalid_json" ? " (답변 형식 오류)" : "") + ". 다시 누르거나 아래 요청문으로 직접 만들어 보세요.");
+        if (e && e.code === "rate_limited") { failed.push("요청이 많아 잠시 막혔어요. 1~2분 뒤 다시 눌러 주세요."); $("manual").hidden = false; break; }
+        failed.push("[" + (job.p.no ? job.p.no + "번 " : "") + job.a.name + "] 만들기에 실패했어요" + (e && e.code === "invalid_json" ? " (답변 형식 오류)" : "") + ".");
         $("manual").hidden = false;
       }
     }
     aborter = null;
     $("make").disabled = false;
     $("stop").hidden = true;
-    var text = prefix.concat(done.length ? ["AI 유형 추가: " + done.join(", ") + "."] : []).concat(failed).join(" ");
+    var text = prefix.concat(done ? ["AI 유형 " + done + "문제를 추가했어요."] : []).concat(failed).join(" ");
     show($("status"), failed.length ? "warn" : "ok", text);
   }
 
@@ -189,10 +447,11 @@
     var text = $("ai-in").value.trim();
     if (!text) return show($("status"), "err", "Claude의 답변을 먼저 붙여 넣어 주세요.");
     try {
-      var fallback = pendingAi.length === 1 ? pendingAi[0].type : null;
-      var res = VM.parseAiProblems(text, fallback);
-      state.problems = state.problems.concat(res.problems);
-      save(); renderSheet();
+      var ctx = pendingCtx || { exam: "", passages: [] };
+      var one = ctx.passages.length === 1 ? ctx.passages[0].no : "";
+      var res = VM.parseAiProblems(text, { exam: ctx.exam, no: one });
+      insertProblems(res.problems);
+      saveState(); renderPages();
       $("ai-in").value = "";
       show($("status"), res.warnings.length ? "warn" : "ok", res.problems.length + "문제를 불러왔어요. " + res.warnings.join(" "));
     } catch (e) {
@@ -200,97 +459,194 @@
     }
   }
 
-  function copyPrompt() {
-    var ta = $("prompt-out");
-    var done = function () { $("copy-state").textContent = "복사했어요. Claude 채팅에 붙여 넣으세요."; };
-    var fallback = function () { ta.focus(); ta.select(); $("copy-state").textContent = "선택된 글자를 Ctrl+C(⌘+C)로 복사하세요."; };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, fallback);
-    else fallback();
-  }
+  // ---------- 문제지 설정 ----------
 
-  // ---------- 문제지 미리보기 ----------
+  var LAYOUT_FIELDS = { title: "title", eyebrow: "eyebrow", "header-left": "headerLeft", "header-right": "headerRight", "footer-left": "footerLeft", "footer-right": "footerRight" };
 
   function docModel() {
+    var L = state.layout;
     return {
-      title: $("title").value.trim() || "영어 변형문제",
-      subtitle: $("subtitle").value.trim(),
+      title: L.title || "영어 변형문제",
       problems: state.problems,
-      options: { answers: $("opt-answers").checked, explanations: $("opt-expl").checked, columns: $("opt-cols").checked ? 2 : 1 }
+      layout: {
+        eyebrow: L.eyebrow, showName: L.showName,
+        header: { left: L.headerLeft, right: L.headerRight },
+        footer: { left: L.footerLeft, right: L.footerRight }
+      },
+      options: state.options
     };
+  }
+
+  // ---------- 쪽 나누어 그리기 ----------
+
+  var HEAD_KINDS = { eyebrow: true, title: true, nameLine: true };
+
+  function blockEl(bl, prev, next) {
+    var el = document.createElement("p");
+    el.className = "k-" + bl.kind;
+    if (bl.kind === "ask") {
+      if (bl.first) el.classList.add("first");
+      var num = document.createElement("span");
+      num.className = "r-num";
+      num.textContent = bl.runs[0].text;
+      var text = document.createElement("span");
+      runsToNodes(bl.runs.slice(2), text);
+      el.append(num, text);
+      return el;
+    }
+    if (bl.kind === "choice" && (!prev || prev.kind !== "choice")) el.classList.add("first");
+    if (bl.kind === "box") {
+      if (!prev || prev.kind !== "box") el.classList.add("first");
+      if (!next || next.kind !== "box") el.classList.add("last");
+    }
+    runsToNodes(bl.runs, el);
+    return el;
   }
 
   function runsToNodes(runs, parent) {
     runs.forEach(function (r) {
+      if (r.tab) return;
       var node = document.createTextNode(r.text);
       if (r.u) { var u = document.createElement("u"); u.appendChild(node); node = u; }
       if (r.b) { var b = document.createElement("b"); b.appendChild(node); node = b; }
+      if (r.role && r.role !== "num") { var s = document.createElement("span"); s.className = "r-" + r.role; s.appendChild(node); node = s; }
       parent.appendChild(node);
     });
   }
 
-  var CLASS = { title: "s-title", subtitle: "s-sub", question: "s-q", box: "s-box", para: "s-para", choice: "s-choice", answer: "s-answer" };
+  // 블록을 묶음으로 나눈다. 문제 하나(원문 번호~선지), 정답 한 줄이 한 묶음이다. 정답 제목은 첫 정답과 묶는다.
+  function units(blocks) {
+    var out = [], cur = null, qIndex = -1;
+    blocks.forEach(function (bl, i) {
+      if (HEAD_KINDS[bl.kind]) return;
+      if (bl.kind === "pagebreak") { out.push({ pagebreak: true }); cur = null; return; }
+      var prevKind = blocks[i - 1] && blocks[i - 1].kind;
+      var starts = bl.kind === "src" || bl.kind === "ansTitle" ||
+        (bl.kind === "ask" && prevKind !== "src") ||
+        (bl.kind === "ans" && prevKind !== "ansTitle");
+      if (starts || !cur) {
+        cur = { blocks: [], problem: null };
+        if (bl.kind === "src" || bl.kind === "ask") cur.problem = ++qIndex;
+        out.push(cur);
+      }
+      cur.blocks.push({ bl: bl, prev: blocks[i - 1], next: blocks[i + 1] });
+    });
+    return out;
+  }
 
-  function renderSheet() {
-    var sheet = $("sheet");
-    sheet.textContent = "";
+  function makePage(pagesEl, pageNo, headBlocks) {
+    var L = state.layout;
+    var page = document.createElement("div");
+    page.className = "page";
+    if (L.headerLeft || L.headerRight) {
+      var h = document.createElement("div");
+      h.className = "p-header";
+      var hl = document.createElement("span"); hl.textContent = L.headerLeft || "";
+      var hr = document.createElement("span"); hr.textContent = L.headerRight || "";
+      h.append(hl, hr);
+      page.appendChild(h);
+    }
+    if (headBlocks) {
+      var top = document.createElement("div");
+      top.className = "p-top";
+      headBlocks.forEach(function (bl) { top.appendChild(blockEl(bl)); });
+      page.appendChild(top);
+    }
+    var body = document.createElement("div");
+    var two = state.options.columns !== 1;
+    body.className = "p-body" + (two ? " two" : "");
+    var cols = [];
+    for (var c = 0; c < (two ? 2 : 1); c++) {
+      var col = document.createElement("div");
+      col.className = "col";
+      body.appendChild(col); cols.push(col);
+    }
+    page.appendChild(body);
+    var f = document.createElement("div");
+    f.className = "p-footer";
+    var fl = document.createElement("span"); fl.textContent = L.footerLeft || "";
+    var fc = document.createElement("span"); fc.textContent = "- " + pageNo + " -";
+    var fr = document.createElement("span"); fr.textContent = L.footerRight || "";
+    f.append(fl, fc, fr);
+    page.appendChild(f);
+    pagesEl.appendChild(page);
+    return cols;
+  }
+
+  function overflows(col) { return col.scrollHeight > col.clientHeight + 1; }
+
+  function renderPages() {
+    var pagesEl = $("pages");
+    pagesEl.textContent = "";
     $("count").textContent = state.problems.length + "문제";
     var blocks = VM.buildBlocks(docModel());
-    var current = sheet, qIndex = -1;
-    blocks.forEach(function (bl, i) {
-      if (bl.kind === "pagebreak") { current = sheet; var hr = document.createElement("hr"); hr.className = "s-break"; sheet.appendChild(hr); return; }
-      if (bl.kind === "question") {
-        qIndex++;
-        current = document.createElement("div");
-        current.className = "problem";
-        current.appendChild(problemTools(qIndex));
-        sheet.appendChild(current);
-      }
-      if (bl.kind === "title" && qIndex >= 0) current = sheet;
-      var p = document.createElement(bl.kind === "title" ? "h3" : "p");
-      p.className = CLASS[bl.kind];
-      if (bl.kind === "box") {
-        var prev = blocks[i - 1], next = blocks[i + 1];
-        if (!prev || prev.kind !== "box") p.classList.add("first");
-        if (!next || next.kind !== "box") p.classList.add("last");
-      }
-      runsToNodes(bl.runs, p);
-      current.appendChild(p);
-    });
+    var pageNo = 1;
+    var cols = makePage(pagesEl, pageNo, blocks.filter(function (b) { return HEAD_KINDS[b.kind]; }));
+    var ci = 0;
+    function newPage() { pageNo++; cols = makePage(pagesEl, pageNo, null); ci = 0; }
+    function nextCol() { ci++; if (ci >= cols.length) newPage(); }
     if (!state.problems.length) {
       var e = document.createElement("p");
-      e.className = "empty";
-      e.textContent = "아직 문제가 없어요. 왼쪽에서 유형을 고르고 ‘문제 만들기’를 누르세요.";
-      sheet.appendChild(e);
+      e.className = "page-empty";
+      e.textContent = "아직 문제가 없어요. 왼쪽에서 지문과 유형을 고르고 ‘문제 만들기’를 누르세요.";
+      cols[0].appendChild(e);
     }
+    units(blocks).forEach(function (u) {
+      if (u.pagebreak) { newPage(); return; }
+      var els = u.blocks.map(function (x) { return blockEl(x.bl, x.prev, x.next); });
+      if (u.problem !== null) {
+        els[0].style.position = "relative";
+        els[0].appendChild(problemTools(u.problem));
+      }
+      var col = cols[ci];
+      els.forEach(function (el) { col.appendChild(el); });
+      if (!overflows(col)) return;
+      els.forEach(function (el) { el.remove(); });
+      if (col.childElementCount) { nextCol(); col = cols[ci]; }
+      els.forEach(function (el) { col.appendChild(el); });
+      if (!overflows(col)) return;
+      // 한 단보다 긴 묶음은 문단 단위로 나눠 싣는다.
+      els.forEach(function (el) { el.remove(); });
+      els.forEach(function (el) {
+        col.appendChild(el);
+        if (overflows(col) && col.childElementCount > 1) { el.remove(); nextCol(); col = cols[ci]; col.appendChild(el); }
+      });
+    });
+    fitPages();
+  }
+
+  function fitPages() {
+    var wrap = $("pages-scroll"), pagesEl = $("pages");
+    var s = Math.min(1, wrap.clientWidth / 794);
+    pagesEl.style.transform = s < 1 ? "scale(" + s + ")" : "";
+    wrap.style.height = s < 1 ? Math.ceil(pagesEl.offsetHeight * s) + "px" : "";
   }
 
   function problemTools(i) {
-    var box = document.createElement("div");
+    var box = document.createElement("span");
     box.className = "tools";
     [["↑", "위로", -1], ["↓", "아래로", 1]].forEach(function (d) {
       var b = document.createElement("button");
       b.type = "button"; b.textContent = d[0]; b.title = (i + 1) + "번 " + d[1];
       b.disabled = i + d[2] < 0 || i + d[2] >= state.problems.length;
-      b.addEventListener("click", function () { move(i, d[2]); });
+      b.addEventListener("click", function () {
+        var j = i + d[2], tmp = state.problems[i];
+        state.problems[i] = state.problems[j]; state.problems[j] = tmp;
+        saveState(); renderPages();
+      });
       box.appendChild(b);
     });
     var del = document.createElement("button");
     del.type = "button"; del.textContent = "삭제"; del.title = (i + 1) + "번 삭제";
-    del.addEventListener("click", function () { state.problems.splice(i, 1); save(); renderSheet(); });
+    del.addEventListener("click", function () { state.problems.splice(i, 1); saveState(); renderPages(); });
     box.appendChild(del);
     return box;
-  }
-
-  function move(i, d) {
-    var j = i + d;
-    var tmp = state.problems[i]; state.problems[i] = state.problems[j]; state.problems[j] = tmp;
-    save(); renderSheet();
   }
 
   // ---------- 파일 저장 ----------
 
   function fileBase() {
-    return ($("title").value.trim() || "영어 변형문제").replace(/[\\/:*?"<>|]+/g, " ").trim();
+    return (state.layout.title || "영어 변형문제").replace(/[\\/:*?"<>|]+/g, " ").trim() || "영어 변형문제";
   }
 
   function plainDownload(name, blob) {
@@ -314,9 +670,7 @@
   }
 
   // Claude 화면 안에서는 .hwpx 저장이 막혀 있어, 한글에서 바로 열리는 .docx로 저장한다.
-  function hangulFormat() {
-    return downloadsCap ? "docx" : "hwpx";
-  }
+  function hangulFormat() { return downloadsCap ? "docx" : "hwpx"; }
 
   function updateSaveHint() {
     $("save-hint").textContent = hangulFormat() === "docx"
@@ -339,9 +693,9 @@
     }
   }
 
-  function loadScript(src) {
+  function loadScript(src, ready) {
     return new Promise(function (resolve, reject) {
-      if (window.html2pdf) return resolve();
+      if (ready()) return resolve();
       var s = document.createElement("script");
       s.src = src; s.onload = resolve;
       s.onerror = function () { reject(new Error("PDF 도구를 불러오지 못했어요. 인터넷 연결을 확인하세요.")); };
@@ -356,26 +710,25 @@
     show($("save-status"), "", "PDF를 만드는 중이에요…");
     var holder = null;
     try {
-      await loadScript(HTML2PDF_URL);
-      holder = document.createElement("div");
-      holder.style.cssText = "position:fixed;left:-10000px;top:0;width:182mm";
-      var clone = $("sheet").cloneNode(true);
-      clone.removeAttribute("id");
-      clone.classList.add("pdf-mode");
-      // A4 폭(210mm)에서 좌우 여백 14mm씩을 뺀 폭에 맞춘다.
-      clone.style.cssText = "width:182mm;max-width:none;padding:0;box-shadow:none";
-      holder.appendChild(clone);
-      document.body.appendChild(holder);
+      await loadScript(LIBS.html2canvas, function () { return !!window.html2canvas; });
+      await loadScript(LIBS.jspdf, function () { return !!(window.jspdf && window.jspdf.jsPDF); });
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
-      var blob = await window.html2pdf().set({
-        margin: [14, 14, 14, 14],
-        image: { type: "jpeg", quality: 0.95 },
-        html2canvas: { scale: 2, backgroundColor: "#ffffff", useCORS: true },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["css", "legacy"], avoid: [".problem", ".s-answer"] }
-      }).from(clone).outputPdf("blob");
-      var r = await offerFile(fileBase() + ".pdf", blob);
-      show($("save-status"), r === "declined" ? "" : "ok", r === "declined" ? "저장을 취소했어요." : "PDF 파일을 저장했어요.");
+      holder = $("pages").cloneNode(true);
+      holder.removeAttribute("id");
+      holder.classList.add("pdf-mode");
+      holder.style.cssText = "position:fixed;left:-10000px;top:0;transform:none";
+      document.body.appendChild(holder);
+      var pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+      var pages = holder.querySelectorAll(".page");
+      for (var i = 0; i < pages.length; i++) {
+        pages[i].style.boxShadow = "none";
+        show($("save-status"), "", "PDF를 만드는 중이에요… (" + (i + 1) + "/" + pages.length + "쪽)");
+        var canvas = await window.html2canvas(pages[i], { scale: 2, backgroundColor: "#ffffff" });
+        if (i) pdf.addPage();
+        pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297);
+      }
+      var r = await offerFile(fileBase() + ".pdf", pdf.output("blob"));
+      show($("save-status"), r === "declined" ? "" : "ok", r === "declined" ? "저장을 취소했어요." : "PDF 파일을 저장했어요 (" + pages.length + "쪽).");
     } catch (e) {
       show($("save-status"), "err", "PDF 저장에 실패했어요: " + (e.message || e.code || e));
     } finally {
@@ -386,26 +739,87 @@
 
   // ---------- 시작 ----------
 
+  function seedExample() {
+    var exam = { id: uid(), name: "예시 시험", passages: [{ id: uid(), no: "29", text: SAMPLE }] };
+    lib = { exams: [exam], currentExam: exam.id };
+    checked = {}; checked[exam.passages[0].id] = true;
+    state.selection = { order: { on: true, count: 1 }, insert: { on: true, count: 1 }, arrange: { on: true, count: 1 } };
+    var sents = VM.splitSentences(SAMPLE);
+    state.problems = VM.makeOrder(sents, 1, VM.makeRng(3)).concat(VM.makeInsert(sents, 1, VM.makeRng(5)), VM.makeArrange(sents, 1, VM.makeRng(8)));
+    state.problems.forEach(function (p) { p.source = { exam: exam.name, no: "29" }; });
+    state.layout.headerLeft = "예시 학원";
+    state.layout.footerLeft = "예시 선생님";
+  }
+
   function init() {
-    if (!load()) {
-      $("passage").value = SAMPLE;
-      state.selection = { order: { on: true, count: 2 }, insert: { on: true, count: 2 }, arrange: { on: true, count: 1 } };
-      state.problems = VM.makeOrder(VM.splitSentences(SAMPLE), 1, VM.makeRng(3))
-        .concat(VM.makeInsert(VM.splitSentences(SAMPLE), 1, VM.makeRng(5)))
-        .concat(VM.makeArrange(VM.splitSentences(SAMPLE), 1, VM.makeRng(8)));
+    var saved = loadJson(STATE_KEY);
+    var savedLib = loadJson(LIB_KEY);
+    if (savedLib && Array.isArray(savedLib.exams)) lib = savedLib;
+    if (saved) {
+      state.problems = saved.problems || [];
+      state.selection = saved.selection || {};
+      Object.assign(state.layout, saved.layout || {});
+      Object.assign(state.options, saved.options || {});
+      checked = saved.checked || {};
+      $("by-line").checked = !!saved.byLine;
+    } else if (!savedLib) {
+      seedExample();
+      saveLib(); saveState();
     }
+
+    Object.keys(LAYOUT_FIELDS).forEach(function (id) {
+      var key = LAYOUT_FIELDS[id];
+      $(id).value = state.layout[key] || "";
+      $(id).addEventListener("input", function () { state.layout[key] = $(id).value; saveState(); renderPages(); });
+    });
+    $("opt-name").checked = state.layout.showName !== false;
+    $("opt-cols").checked = state.options.columns !== 1;
+    $("opt-answers").checked = state.options.answers !== false;
+    $("opt-expl").checked = state.options.explanations !== false;
+    $("opt-name").addEventListener("change", function () { state.layout.showName = $("opt-name").checked; saveState(); renderPages(); });
+    $("opt-cols").addEventListener("change", function () { state.options.columns = $("opt-cols").checked ? 2 : 1; saveState(); renderPages(); });
+    $("opt-answers").addEventListener("change", function () { state.options.answers = $("opt-answers").checked; saveState(); renderPages(); });
+    $("opt-expl").addEventListener("change", function () { state.options.explanations = $("opt-expl").checked; saveState(); renderPages(); });
+
     updateSaveHint();
     renderTypes();
-    renderSentences();
-    renderSheet();
+    renderExams();
+    var exam = currentExam();
+    editPassage(exam && exam.passages.length ? sortPassages(exam.passages)[0].id : null);
+    renderPages();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(renderPages);
+    window.addEventListener("resize", fitPages);
 
-    $("passage").addEventListener("input", function () { renderSentences(); save(); });
-    $("by-line").addEventListener("change", function () { renderSentences(); save(); });
-    ["title", "subtitle"].forEach(function (id) { $(id).addEventListener("input", function () { renderSheet(); save(); }); });
-    ["opt-answers", "opt-expl"].forEach(function (id) { $(id).addEventListener("change", renderSheet); });
+    $("exam").addEventListener("change", function () { lib.currentExam = $("exam").value || null; saveLib(); editPassage(null); renderExams(); });
+    $("exam-new").addEventListener("click", function () { openExamForm("new"); });
+    $("exam-rename").addEventListener("click", function () { openExamForm("rename"); });
+    $("exam-save").addEventListener("click", submitExamForm);
+    $("exam-name").addEventListener("keydown", function (e) { if (e.key === "Enter") submitExamForm(); });
+    $("exam-cancel").addEventListener("click", function () { $("exam-form").hidden = true; });
+    $("exam-delete").addEventListener("click", function () {
+      var ex = currentExam(); if (!ex) return;
+      $("exam-confirm-text").textContent = "‘" + ex.name + "’ 시험과 지문 " + ex.passages.length + "개를 지울까요? ";
+      $("exam-confirm").hidden = false;
+    });
+    $("exam-confirm-yes").addEventListener("click", deleteExam);
+    $("exam-confirm-no").addEventListener("click", function () { $("exam-confirm").hidden = true; });
+    $("chips-all").addEventListener("click", function () {
+      var ex = currentExam(); if (!ex) return;
+      ex.passages.forEach(function (p) { checked[p.id] = true; }); saveState(); renderChips();
+    });
+    $("chips-none").addEventListener("click", function () { checked = {}; saveState(); renderChips(); });
+    $("p-save").addEventListener("click", savePassage);
+    $("p-new").addEventListener("click", function () { editPassage(null); $("p-no").focus(); });
+    $("p-delete").addEventListener("click", deletePassage);
+    $("passage").addEventListener("input", function () { renderSentences(); updateTarget(); });
+    $("p-no").addEventListener("input", updateTarget);
+    $("by-line").addEventListener("change", function () { renderSentences(); saveState(); });
+    $("bulk-add").addEventListener("click", bulkAdd);
+    $("lib-export").addEventListener("click", exportLib);
+    $("lib-import").addEventListener("change", function () { if (this.files[0]) importLib(this.files[0]); this.value = ""; });
+
     $("make").addEventListener("click", make);
     $("stop").addEventListener("click", function () { if (aborter) aborter.abort(); });
-    $("copy-prompt").addEventListener("click", copyPrompt);
     $("load-ai").addEventListener("click", loadAi);
     $("save-hwpx").addEventListener("click", saveHangul);
     $("save-pdf").addEventListener("click", savePdf);
@@ -420,7 +834,7 @@
     $("clear").addEventListener("click", function () { $("confirm-clear").hidden = !state.problems.length; });
     $("clear-no").addEventListener("click", function () { $("confirm-clear").hidden = true; });
     $("clear-yes").addEventListener("click", function () {
-      state.problems = []; save(); renderSheet(); $("confirm-clear").hidden = true;
+      state.problems = []; saveState(); renderPages(); $("confirm-clear").hidden = true;
     });
   }
 

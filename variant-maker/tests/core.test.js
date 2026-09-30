@@ -70,10 +70,11 @@ test("AI 답변 읽기: 코드 블록, 숫자 정답, 빠진 type을 처리한�
 });
 
 test("AI 요청문에 지문과 유형이 들어간다", () => {
-  const prompt = VM.buildCombinedPrompt(PASSAGE, [{ type: "grammar", count: 2 }, { type: "title", count: 1 }]);
-  assert.ok(prompt.includes("어법 (2문제"));
-  assert.ok(prompt.includes("제목 (1문제"));
-  assert.ok(prompt.includes(SENTS[0]));
+  const prompt = VM.buildCombinedPrompt([{ no: "29", text: PASSAGE }, { no: "30", text: "Short text." }], [{ type: "grammar", count: 2 }, { type: "title", count: 1 }]);
+  assert.ok(prompt.includes("어법 (지문마다 2문제"));
+  assert.ok(prompt.includes("제목 (지문마다 1문제"));
+  assert.ok(prompt.includes("### 지문 [29]\n" + SENTS[0]));
+  assert.ok(prompt.includes("### 지문 [30]"));
   assert.throws(() => VM.buildPrompt(PASSAGE, "order", 1));
 });
 
@@ -86,35 +87,70 @@ test("서식 태그를 글자 조각으로 나눈다", () => {
   ]);
 });
 
-test("HWPX: mimetype이 맨 앞·무압축이고 본문에 문제가 들어간다", () => {
+const DOC = {
+  title: "시험",
+  layout: { eyebrow: "ENGLISH", showName: true, header: { left: "행복학원", right: "고2" }, footer: { left: "김선생", right: "" } },
+  options: { answers: true, explanations: true, columns: 2 }
+};
+
+test("HWPX: mimetype이 맨 앞·무압축이고 본문·머리말·쪽 번호·2단이 들어간다", () => {
+  const style = TEMPLATE.__style;
   const problems = VM.makeOrder(SENTS, 1, VM.makeRng(5)).concat([
-    { type: "grammar", instruction: "어법 & <테스트>", passage: "He <u>①go</u> home.", choices: null, answer: "①", boxFirst: true }
+    { type: "grammar", instruction: "어법 & <테스트>", passage: "He <u>①go</u> home.", choices: null, answer: "①", boxFirst: true, source: { exam: "26년 9월", no: "29" } }
   ]);
-  const bytes = Buffer.from(VM.buildHwpx(TEMPLATE, { title: "시험", problems, options: { answers: true, explanations: true, columns: 2 } }));
+  const bytes = Buffer.from(VM.buildHwpx(TEMPLATE, Object.assign({}, DOC, { problems })));
   assert.strictEqual(bytes.readUInt32LE(0), 0x04034b50);
   assert.strictEqual(bytes.readUInt16LE(8), 0, "무압축");
   assert.strictEqual(bytes.toString("latin1", 30, 38), "mimetype");
   assert.strictEqual(bytes.toString("latin1", 38, 57), "application/hwp+zip");
   const text = bytes.toString("utf8");
   assert.ok(text.includes("어법 &amp; &lt;테스트&gt;"));
-  assert.ok(text.includes('charPrIDRef="8"><hp:t>①go</hp:t>'), "밑줄 글자 모양");
-  assert.ok(text.includes('colCount="2"'));
+  assert.ok(text.includes('charPrIDRef="' + style.char.bodyU + '"><hp:t>①go</hp:t>'), "밑줄 글자 모양");
+  assert.ok(text.includes('<hp:t>29번</hp:t>'), "원문 번호");
+  assert.ok(text.includes('colCount="2"') && text.includes("<hp:colLine"), "2단과 구분선");
+  assert.ok(text.includes("<hp:header") && text.includes("<hp:t>행복학원</hp:t>"), "머리말");
+  assert.ok(text.includes('numType="PAGE"'), "쪽 번호");
+  assert.ok(text.includes('face="Times New Roman"'), "영어 글꼴");
   assert.ok(text.includes('pageBreak="1"'), "정답지는 새 쪽에서 시작");
+});
+
+test("원문 번호: 시험이 섞이면 시험 이름을 붙인다", () => {
+  const a = { source: { exam: "26년 9월", no: "29" } }, b = { source: { exam: "26년 6월", no: "41-42" } }, c = { source: null };
+  assert.deepStrictEqual(VM.sourceLabels([a, a]), ["29번", "29번"]);
+  assert.deepStrictEqual(VM.sourceLabels([a, b, c]), ["26년 9월 · 29번", "26년 6월 · 41-42번", ""]);
+});
+
+test("지문 한꺼번에 등록: [번호] 또는 N번 줄로 나눈다", () => {
+  const list = VM.parseBulkPassages("[18]\nDear Ms. Carter,\nThanks.\n\n19번\nThe sun rose.\n[41 ~ 42]\nLong text.\n");
+  assert.deepStrictEqual(list, [
+    { no: "18", text: "Dear Ms. Carter,\nThanks." },
+    { no: "19", text: "The sun rose." },
+    { no: "41-42", text: "Long text." }
+  ]);
+});
+
+test("AI 답변 여러 개를 이어 붙여도 읽고, src로 원문 번호를 단다", () => {
+  const one = '{"problems":[{"src":"29","type":"title","passage":"x","choices":["a","b","c","d","e"],"answer":"2"}]}';
+  const two = '```json\n{"problems":[{"src":"30","type":"gist","passage":"y {braces}","choices":["a","b","c","d","e"],"answer":"③"}]}\n```';
+  const { problems } = VM.parseAiProblems(one + "\n\n" + two, { exam: "26년 9월" });
+  assert.deepStrictEqual(problems.map((p) => [p.type, p.answer, p.source.no, p.source.exam]), [["title", "②", "29", "26년 9월"], ["gist", "③", "30", "26년 9월"]]);
 });
 
 test("zip의 CRC32 값이 표준과 같다", () => {
   assert.strictEqual(VM.crc32(Buffer.from("123456789")), 0xCBF43926);
 });
 
-test("DOCX: 필요한 부분이 들어 있고 상자·밑줄·2단·쪽 나눔이 표시된다", () => {
+test("DOCX: 필요한 부분이 들어 있고 상자·밑줄·2단·머리말·쪽 번호가 표시된다", () => {
   const problems = VM.makeInsert(SENTS, 1, VM.makeRng(6)).concat([
     { type: "grammar", instruction: "어법 & <테스트>", passage: "He <u>①go</u> home.", choices: null, answer: "①", boxFirst: true }
   ]);
-  const text = Buffer.from(VM.buildDocx({ title: "시험", problems, options: { answers: true, explanations: true, columns: 2 } })).toString("utf8");
-  for (const part of ["[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/styles.xml"]) assert.ok(text.includes(part), part);
+  const text = Buffer.from(VM.buildDocx(Object.assign({}, DOC, { problems }))).toString("utf8");
+  for (const part of ["[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/styles.xml", "word/header1.xml", "word/footer1.xml"]) assert.ok(text.includes(part), part);
+  assert.ok(text.includes('w:instr="PAGE"'), "쪽 번호");
+  assert.ok(text.includes('w:ascii="Times New Roman"'), "영어 글꼴");
   assert.ok(text.includes("어법 &amp; &lt;테스트&gt;"));
   assert.ok(text.includes('<w:u w:val="single"/></w:rPr><w:t xml:space="preserve">①go</w:t>'));
-  assert.ok(text.includes("<w:pBdr>"), "상자");
-  assert.ok(text.includes('<w:cols w:num="2"'));
+  assert.ok(text.includes('w:fill="EEF2F8"'), "상자");
+  assert.ok(text.includes('<w:cols w:num="2" w:space="567" w:sep="1"/>'));
   assert.ok(text.includes("<w:pageBreakBefore/>"));
 });
