@@ -1557,16 +1557,21 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
 
   function srcOf(exam, p) { return p.no ? { exam: exam, no: p.no } : null; }
 
-  // 새 문제를 넣고, 유형 순서대로 묶은 뒤 같은 유형 안에서는 지문 순서(교재 순서 → 지문 번호 순서)로 정렬한다.
-  function insertProblems(list) {
+  // 문제는 늘 유형 순서대로 묶고, 같은 유형 안에서는 지문 순서(교재 순서 → 지문 번호 순서)로 놓는다.
+  function sortAll() {
     var rank = {}, n = 0;
     lib.exams.forEach(function (e) {
       sortPassages(e.passages).forEach(function (p) { rank[e.name + "\u0001" + p.no] = n++; });
     });
-    state.problems = VM.sortProblems(state.problems.concat(list), function (src) {
+    state.problems = VM.sortProblems(state.problems, function (src) {
       var r = rank[(src.exam || "") + "\u0001" + src.no];
       return r === undefined ? null : r;
     });
+  }
+
+  function insertProblems(list) {
+    state.problems = state.problems.concat(list);
+    sortAll();
   }
 
   function make() {
@@ -1828,6 +1833,7 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
   function renderPages() {
     var pagesEl = $("pages");
     pagesEl.textContent = "";
+    sortAll(); // 예전에 만든 문제나 지문 번호를 바꾼 경우에도 순서를 맞춘다
     $("count").textContent = state.problems.length + "문제";
     var blocks = VM.buildBlocks(docModel());
     var pageNo = 1;
@@ -1875,17 +1881,6 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
   function problemTools(i) {
     var box = document.createElement("span");
     box.className = "tools";
-    [["↑", "위로", -1], ["↓", "아래로", 1]].forEach(function (d) {
-      var b = document.createElement("button");
-      b.type = "button"; b.textContent = d[0]; b.title = (i + 1) + "번 " + d[1];
-      b.disabled = i + d[2] < 0 || i + d[2] >= state.problems.length;
-      b.addEventListener("click", function () {
-        var j = i + d[2], tmp = state.problems[i];
-        state.problems[i] = state.problems[j]; state.problems[j] = tmp;
-        saveState(); renderPages();
-      });
-      box.appendChild(b);
-    });
     var del = document.createElement("button");
     del.type = "button"; del.textContent = "삭제"; del.title = (i + 1) + "번 삭제";
     del.addEventListener("click", function () { state.problems.splice(i, 1); saveState(); renderPages(); });
