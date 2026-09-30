@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>영어 변형문제 메이커</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=Noto+Serif+KR:wght@400;700&family=Source+Serif+4:wght@400;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>영어 변형문제 메이커</h1>
+    <p>지문 하나로 모의고사 유형 변형문제를 만들어 HWPX·PDF로 저장합니다.</p>
+  </header>
+
+  <div class="layout">
+    <div class="stack">
+      <section class="panel" aria-labelledby="h-passage">
+        <h2 id="h-passage"><span class="step">1</span>지문 넣기</h2>
+        <label class="field" for="passage">영어 지문
+          <textarea id="passage" rows="9" spellcheck="false"></textarea>
+        </label>
+        <p class="hint" id="sample-note">예시 지문이 들어 있어요. 지우고 선생님의 지문을 붙여 넣으세요.</p>
+        <label class="check"><input type="checkbox" id="by-line"> 한 줄에 한 문장씩 나눠 넣었어요</label>
+        <details id="sent-box">
+          <summary id="sent-summary">문장 나누기 확인</summary>
+          <ol class="sentences" id="sentences"></ol>
+          <p class="hint">문장이 잘못 나뉘었으면 지문을 한 줄에 한 문장씩 적고 위 칸을 체크하세요.</p>
+        </details>
+      </section>
+
+      <section class="panel" aria-labelledby="h-types">
+        <h2 id="h-types"><span class="step">2</span>유형과 개수 고르기</h2>
+        <p class="hint"><span class="tag auto">자동</span> 무료로 바로 만들어요. <span class="tag ai">AI</span> Claude가 만들어요.</p>
+        <div class="types" id="types"></div>
+        <div class="row">
+          <button type="button" class="link" id="select-auto">자동 유형만</button>
+          <button type="button" class="link" id="select-none">모두 해제</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="h-make">
+        <h2 id="h-make"><span class="step">3</span>만들기</h2>
+        <div class="row">
+          <button type="button" class="primary" id="make">문제 만들기</button>
+          <button type="button" id="stop" hidden>멈추기</button>
+        </div>
+        <div id="status" class="msg" hidden></div>
+
+        <div id="manual" class="ai-out" hidden>
+          <p class="hint" id="manual-intro">AI 유형은 Claude 채팅에서 만들어요. ① 요청문을 복사해 <a href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai</a>에 붙여 넣고 ② Claude의 답변 전체를 복사해 아래 칸에 붙여 넣은 뒤 ③ 불러오기를 누르세요.</p>
+          <label class="field" for="prompt-out">① Claude에게 보낼 요청문
+            <textarea id="prompt-out" class="mono" rows="6" readonly></textarea>
+          </label>
+          <div class="row"><button type="button" id="copy-prompt">요청문 복사</button><span class="hint" id="copy-state"></span></div>
+          <label class="field" for="ai-in">② Claude의 답변 붙여넣기
+            <textarea id="ai-in" class="mono" rows="6" placeholder='{"problems":[ ... ]}'></textarea>
+          </label>
+          <div class="row"><button type="button" class="primary" id="load-ai">③ 불러오기</button></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="stack" aria-labelledby="h-sheet">
+      <div class="panel">
+        <div class="sheet-bar">
+          <h2 id="h-sheet">문제지 <span class="hint" id="count">0문제</span></h2>
+          <div class="row">
+            <button type="button" id="save-hwpx" class="primary">HWPX 저장</button>
+            <button type="button" id="save-pdf">PDF 저장</button>
+            <button type="button" id="clear">모두 지우기</button>
+          </div>
+        </div>
+        <div class="row">
+          <label class="field" for="title" style="flex:2 1 220px">문제지 제목
+            <input type="text" id="title" value="영어 변형문제">
+          </label>
+          <label class="field" for="subtitle" style="flex:1 1 160px">부제 (선택)
+            <input type="text" id="subtitle" placeholder="예: 2학년 ( )반 이름 (      )">
+          </label>
+        </div>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="opt-answers" checked> 정답지 붙이기</label>
+          <label class="check"><input type="checkbox" id="opt-expl" checked> 해설 넣기</label>
+          <label class="check"><input type="checkbox" id="opt-cols"> HWPX 2단 편집</label>
+        </div>
+        <div id="save-status" class="msg" hidden></div>
+        <div id="confirm-clear" class="msg warn" hidden>
+          문제를 모두 지울까요?
+          <button type="button" id="clear-yes">지우기</button>
+          <button type="button" id="clear-no">취소</button>
+        </div>
+      </div>
+      <div class="sheet-scroll"><div class="sheet" id="sheet"></div></div>
+    </section>
+  </div>
+</div>
+
+<script src="hwpx-template.js"></script>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
