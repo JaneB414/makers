@@ -5,25 +5,26 @@
 
   var CIRCLED = ["①", "②", "③", "④", "⑤"];
 
+  // 문제지에 실리는 유형 순서
   var TYPES = [
     { key: "claim", name: "주장", mode: "ai", instruction: "다음 글에서 필자가 주장하는 바로 가장 적절한 것은?" },
     { key: "gist", name: "요지", mode: "ai", instruction: "다음 글의 요지로 가장 적절한 것은?" },
     { key: "topic", name: "주제", mode: "ai", instruction: "다음 글의 주제로 가장 적절한 것은?" },
     { key: "title", name: "제목", mode: "ai", instruction: "다음 글의 제목으로 가장 적절한 것은?" },
+    { key: "implied", name: "함축적 의미", mode: "ai", instruction: "밑줄 친 부분이 다음 글에서 의미하는 바로 가장 적절한 것은?" },
     { key: "grammar", name: "어법", mode: "ai", instruction: "다음 글의 밑줄 친 부분 중, 어법상 틀린 것은?" },
     { key: "vocab", name: "어휘", mode: "ai", instruction: "다음 글의 밑줄 친 부분 중, 문맥상 낱말의 쓰임이 적절하지 않은 것은?" },
-    { key: "implied", name: "함축적 의미", mode: "ai", instruction: "밑줄 친 부분이 다음 글에서 의미하는 바로 가장 적절한 것은?" },
     { key: "blank", name: "빈칸", mode: "ai", instruction: "다음 빈칸에 들어갈 말로 가장 적절한 것을 고르시오." },
     { key: "order", name: "순서", mode: "auto", instruction: "주어진 글 다음에 이어질 글의 순서로 가장 적절한 것을 고르시오." },
     { key: "insert", name: "문장삽입", mode: "auto", instruction: "글의 흐름으로 보아, 주어진 문장이 들어가기에 가장 적절한 곳을 고르시오." },
     { key: "summary", name: "요약", mode: "ai", instruction: "다음 글의 내용을 한 문장으로 요약하고자 한다. 빈칸 (A), (B)에 들어갈 말로 가장 적절한 것은?" },
+    { key: "fix", name: "어법 오류 고치기", mode: "ai", instruction: "다음 글의 밑줄 친 부분 중 어법상 틀린 것을 모두 찾아 기호를 쓰고 바르게 고치시오." },
     { key: "arrange", name: "서술형 문장배열", mode: "auto", instruction: "다음 글의 빈칸 (A)에 들어갈 말을 <보기>의 단어를 모두 한 번씩 사용하여 바르게 배열하시오." },
-    { key: "compose", name: "한글 문장 영작", mode: "ai", instruction: "다음 글의 밑줄 친 우리말 (A)를 <조건>에 맞게 영작하시오." },
-    { key: "fix", name: "어법 오류 고치기", mode: "ai", instruction: "다음 글의 밑줄 친 부분 중 어법상 틀린 것을 모두 찾아 기호를 쓰고 바르게 고치시오." }
+    { key: "compose", name: "한글 문장 영작", mode: "ai", instruction: "다음 글의 밑줄 친 우리말 (A)를 <조건>에 맞게 영작하시오." }
   ];
 
   var TYPE_BY_KEY = {};
-  TYPES.forEach(function (t) { TYPE_BY_KEY[t.key] = t; });
+  TYPES.forEach(function (t, i) { t.order = i; TYPE_BY_KEY[t.key] = t; });
 
   // ---------- 난수 ----------
 
@@ -439,6 +440,21 @@
     return { problems: problems, warnings: warnings };
   }
 
+  // ---------- 문제 정렬 ----------
+
+  // 유형 순서(TYPES)대로 묶고, 같은 유형 안에서는 지문 순서대로 놓는다.
+  // passageRank(source)는 지문의 순서 번호를 돌려준다. 같으면 원래 순서를 지킨다.
+  function sortProblems(problems, passageRank) {
+    function typeRank(p) { return TYPE_BY_KEY[p.type] ? TYPE_BY_KEY[p.type].order : TYPES.length; }
+    function srcRank(p) {
+      var r = p.source && passageRank ? passageRank(p.source) : null;
+      return r == null ? Infinity : r;
+    }
+    return problems.map(function (p, i) { return { p: p, i: i, t: typeRank(p), s: srcRank(p) }; })
+      .sort(function (a, b) { return a.t - b.t || (a.s === b.s ? 0 : a.s < b.s ? -1 : 1) || a.i - b.i; })
+      .map(function (x) { return x.p; });
+  }
+
   // ---------- 서식 문자열 (<u>, <b>) ----------
 
   // "a <u>b</u> <b>c</b>" → [{text, u, b}, ...]. 다른 태그는 글자 그대로 둔다.
@@ -517,7 +533,6 @@
       blocks.push({ kind: "ansTitle", runs: [plain("정답" + (opts.explanations ? " 및 해설" : ""))] });
       doc.problems.forEach(function (p, i) {
         var runs = [plain((i + 1) + ")", "ansNum"), plain(" ")].concat(parseRuns(p.answer || "-"));
-        if (labels[i]) runs.push(plain("  [" + labels[i] + "]", "explain"));
         if (opts.explanations && p.explanation) {
           runs.push(plain("  "));
           runs = runs.concat(parseRuns(p.explanation).map(function (r) { r.role = "explain"; return r; }));
@@ -680,13 +695,13 @@
 
   // 글자 모양: [한글 글꼴, 크기(pt), 굵게, 색]
   var DOCX_CHAR = {
-    body: [BATANG, 10], ask: [DOTUM, 10, true], num: [BATANG, 17, false, NAVY], src: [DOTUM, 8, true, "6B7688"],
+    body: [BATANG, 10], ask: [DOTUM, 10, true], num: [BATANG, 13, true, NAVY], src: [DOTUM, 8, true, "6B7688"],
     title: [BATANG, 18, true], eyebrow: [DOTUM, 8.5, true, NAVY], name: [DOTUM, 9], hf: [DOTUM, 8, false, "555555"],
     ansTitle: [BATANG, 14, true], ansNum: [BATANG, 9.5, true, NAVY], ans: [BATANG, 9.5], explain: [BATANG, 8.5, false, "444444"]
   };
 
   // 문단 모양 (단위: twip, 1mm ≈ 56.7)
-  var ASK_TWIP = 340;
+  var ASK_TWIP = 400;
   var DOCX_PARA = {
     eyebrow: '<w:spacing w:after="0" w:line="264" w:lineRule="auto"/>',
     title: '<w:spacing w:after="40" w:line="264" w:lineRule="auto"/>',
@@ -790,6 +805,7 @@
     noLabel: noLabel,
     parseAiProblems: parseAiProblems,
     parseRuns: parseRuns,
+    sortProblems: sortProblems,
     sourceLabels: sourceLabels,
     buildBlocks: buildBlocks,
     buildSectionXml: buildSectionXml,

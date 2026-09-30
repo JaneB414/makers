@@ -78,6 +78,20 @@ test("AI 요청문에 지문과 유형이 들어간다", () => {
   assert.throws(() => VM.buildPrompt(PASSAGE, "order", 1));
 });
 
+test("문제 정렬: 유형 순서대로 묶고, 같은 유형 안에서는 지문 순서대로", () => {
+  const mk = (type, no) => ({ type, source: no ? { exam: "E", no } : null });
+  const rank = { "29": 0, "30": 1 };
+  const sorted = VM.sortProblems([mk("order", "30"), mk("title", "30"), mk("compose", "29"), mk("order", "29"), mk("title", "29"), mk("claim", null)], (s) => rank[s.no]);
+  assert.deepStrictEqual(sorted.map((p) => p.type + (p.source ? p.source.no : "")), ["claim", "title29", "title30", "order29", "order30", "compose29"]);
+  assert.deepStrictEqual(VM.TYPES.map((t) => t.name), ["주장", "요지", "주제", "제목", "함축적 의미", "어법", "어휘", "빈칸", "순서", "문장삽입", "요약", "어법 오류 고치기", "서술형 문장배열", "한글 문장 영작"]);
+});
+
+test("정답지에는 정답과 해설만 나온다", () => {
+  const blocks = VM.buildBlocks({ title: "t", problems: [{ type: "title", instruction: "q", passage: "p", choices: null, answer: "③", explanation: "해설", source: { exam: "E", no: "29" } }], options: { answers: true, explanations: true } });
+  const ans = blocks.filter((b) => b.kind === "ans")[0].runs.map((r) => r.text).join("");
+  assert.strictEqual(ans, "1) ③  해설");
+});
+
 test("서식 태그를 글자 조각으로 나눈다", () => {
   assert.deepStrictEqual(VM.parseRuns("a <u>b <b>c</b></u> <i>d</i>"), [
     { text: "a ", u: false, b: false },

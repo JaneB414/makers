@@ -23,7 +23,7 @@ RULE = "#C9D1DE"
 
 # 본문 폭: A4(59528) - 좌우 여백 15mm(4252)씩
 BODY_WIDTH = 59528 - 4252 * 2
-ASK_INDENT = 1700  # 문항 번호 뒤 발문이 시작하는 위치
+ASK_INDENT = 2000  # 문항 번호 뒤 발문이 시작하는 위치
 
 
 def load_skeleton(wheel):
@@ -81,7 +81,7 @@ def main(wheel):
     for suffix, b, u in (("", False, False), ("U", False, True), ("B", True, False), ("BU", True, True)):
         char("body" + suffix, 10, BATANG, b, u)
         char("ask" + suffix, 10, DOTUM, True, u)
-    char("num", 17, BATANG, color=NAVY)
+    char("num", 13, BATANG, bold=True, color=NAVY)
     char("src", 8, DOTUM, bold=True, color=GRAY)
     char("title", 18, BATANG, bold=True)
     char("eyebrow", 8.5, DOTUM, bold=True, color=NAVY)

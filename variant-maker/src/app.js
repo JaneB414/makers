@@ -378,17 +378,15 @@
 
   function srcOf(exam, p) { return p.no ? { exam: exam, no: p.no } : null; }
 
-  // 같은 지문에서 나온 문제끼리 모이도록, 그 지문의 마지막 문제 뒤에 넣는다.
+  // 새 문제를 넣고, 유형 순서대로 묶은 뒤 같은 유형 안에서는 지문 순서(교재 순서 → 지문 번호 순서)로 정렬한다.
   function insertProblems(list) {
-    list.forEach(function (p) {
-      var at = -1;
-      if (p.source) {
-        for (var i = state.problems.length - 1; i >= 0; i--) {
-          var s = state.problems[i].source;
-          if (s && s.no === p.source.no && s.exam === p.source.exam) { at = i; break; }
-        }
-      }
-      if (at < 0) state.problems.push(p); else state.problems.splice(at + 1, 0, p);
+    var rank = {}, n = 0;
+    lib.exams.forEach(function (e) {
+      sortPassages(e.passages).forEach(function (p) { rank[e.name + "\u0001" + p.no] = n++; });
+    });
+    state.problems = VM.sortProblems(state.problems.concat(list), function (src) {
+      var r = rank[(src.exam || "") + "\u0001" + src.no];
+      return r === undefined ? null : r;
     });
   }
 

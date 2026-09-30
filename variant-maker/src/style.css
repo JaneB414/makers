@@ -141,17 +141,17 @@ details .sub { display: grid; gap: 8px; margin-top: 8px; }
 .page .k-eyebrow { font: 700 11.33px/1.4 var(--kr-sans); color: var(--navy); letter-spacing: .12em; }
 .page .k-title { font: 700 24px/1.3 var(--en), var(--kr-serif); letter-spacing: -0.01em; }
 .page .k-nameLine { text-align: right; font: 12px/1.4 var(--kr-sans); border-bottom: 2.6px solid var(--navy); padding-bottom: 7px; min-height: 26px; }
-.page .k-src { font: 700 10.67px/1.3 var(--kr-sans); color: var(--src-gray); margin: 18px 0 1px 23px; letter-spacing: .03em; }
-.page .k-ask { display: grid; grid-template-columns: 23px minmax(0, 1fr); align-items: baseline; font: 700 13.33px/1.5 var(--kr-sans); margin-bottom: 5px; position: relative; }
+.page .k-src { font: 700 10.67px/1.3 var(--kr-sans); color: var(--src-gray); margin: 18px 0 1px 27px; letter-spacing: .03em; }
+.page .k-ask { display: grid; grid-template-columns: 27px minmax(0, 1fr); align-items: baseline; font: 700 13.33px/1.5 var(--kr-sans); margin-bottom: 5px; position: relative; }
 .page .k-ask.first { margin-top: 18px; }
-.page .k-ask .r-num { font: 400 22.67px/1 var(--en); color: var(--navy); }
+.page .k-ask .r-num { font: 700 17.33px/1 var(--en); color: var(--navy); }
 .page .k-para { text-align: justify; hyphens: auto; }
 .page .k-box { background: var(--box-fill); padding: 1px 9px; text-align: justify; }
 .page .k-box.first { padding-top: 6px; margin-top: 4px; }
 .page .k-box.last { padding-bottom: 6px; margin-bottom: 6px; }
 .page .k-choice { padding-left: 1.35em; text-indent: -1.35em; line-height: 1.55; }
 .page .k-choice.first { margin-top: 6px; }
-.page .k-answerLine { margin: 6px 0 0 23px; }
+.page .k-answerLine { margin: 6px 0 0 27px; }
 .page .k-ansTitle { font: 700 18.67px/1.4 var(--en), var(--kr-serif); text-align: center; margin-bottom: 10px; }
 .page .k-ans { font-size: 12.67px; line-height: 1.5; padding-left: 1.8em; text-indent: -1.8em; margin-bottom: 2px; }
 .page .r-ansNum { color: var(--navy); font-weight: 700; }
