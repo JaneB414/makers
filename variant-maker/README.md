@@ -1,6 +1,6 @@
 # 영어 변형문제 메이커
 
-영어 지문 하나로 수능·모의고사 유형의 변형문제를 만들고, 문제지와 정답지를 **HWPX(한글)** 또는 **PDF**로 저장하는 웹 프로그램입니다. 설치할 것은 없습니다.
+영어 지문 하나로 수능·모의고사 유형의 변형문제를 만들고, 문제지와 정답지를 **한글 파일** 또는 **PDF**로 저장하는 웹 프로그램입니다. 설치할 것은 없습니다.
 
 ## 쓰는 방법
 
@@ -8,7 +8,9 @@
 2. 지문을 붙여 넣고, 만들 유형에 체크한 뒤 개수(1~5)를 정합니다.
 3. **문제 만들기**를 누릅니다.
 4. 오른쪽 미리보기에서 문제 순서를 바꾸거나 지울 수 있습니다. 다른 지문으로 2~3번을 반복하면 문제가 계속 쌓입니다.
-5. **HWPX 저장** 또는 **PDF 저장**을 누릅니다.
+5. **한글 파일 저장** 또는 **PDF 저장**을 누릅니다.
+   - `index.html` 파일로 열면 `.hwpx`로 저장됩니다.
+   - Claude 화면 안에서는 `.hwpx` 저장이 막혀 있어 `.docx`로 저장됩니다. 한글에서 바로 열리고, [파일 → 다른 이름으로 저장]에서 HWP·HWPX로 바꿀 수 있습니다.
 
 ## 유형
 
@@ -42,7 +44,7 @@ python variant-maker/build.py                  # index.html, dist/artifact.html 
 node --test variant-maker/tests/core.test.js   # 테스트
 ```
 
-- `src/core.js`: 문장 나누기, 자동 유형 생성, AI 요청문과 답변 읽기, HWPX 만들기 (화면과 무관한 로직)
+- `src/core.js`: 문장 나누기, 자동 유형 생성, AI 요청문과 답변 읽기, HWPX·DOCX 만들기 (화면과 무관한 로직)
 - `src/app.js`: 화면 동작
 - `src/hwpx-template.js`: HWPX 빈 문서 틀. [python-hwpx](https://github.com/airmang/python-hwpx)(Apache-2.0)의 `Skeleton.hwpx`에 글자·문단 모양(굵게, 밑줄, 상자 등)을 추가한 것입니다. 라이선스는 `template/python-hwpx-LICENSE`에 있습니다.
 - PDF 저장에는 [html2pdf.js](https://github.com/eKoopmans/html2pdf.js) 0.10.1(MIT)을 cdnjs에서 불러와 씁니다.

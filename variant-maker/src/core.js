@@ -542,6 +542,62 @@
     }));
   }
 
+  // ---------- DOCX (한글에서도 바로 열리는 Word 문서) ----------
+
+  var DOCX_PARA = {
+    title: '<w:jc w:val="center"/><w:spacing w:after="120"/>',
+    subtitle: '<w:jc w:val="center"/><w:spacing w:after="240"/>',
+    question: '<w:keepNext/><w:spacing w:before="280" w:after="80"/>',
+    box: '<w:pBdr><w:top w:val="single" w:sz="4" w:space="4" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="6" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="4" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="6" w:color="000000"/></w:pBdr><w:spacing w:before="60" w:after="60"/><w:ind w:left="200" w:right="120"/><w:jc w:val="both"/>',
+    para: '<w:jc w:val="both"/>',
+    choice: '<w:ind w:left="400"/>',
+    answer: ''
+  };
+
+  function docxRun(run, kind) {
+    var props = "";
+    if (run.b || kind === "title") props += "<w:b/>";
+    if (run.u) props += '<w:u w:val="single"/>';
+    if (kind === "title") props += '<w:sz w:val="30"/><w:szCs w:val="30"/>';
+    if (kind === "subtitle") props += '<w:sz w:val="18"/><w:szCs w:val="18"/>';
+    return "<w:r>" + (props ? "<w:rPr>" + props + "</w:rPr>" : "") + '<w:t xml:space="preserve">' + xmlEscape(run.text) + "</w:t></w:r>";
+  }
+
+  function buildDocxBody(blocks, opts) {
+    var out = [];
+    var pendingBreak = false;
+    blocks.forEach(function (bl) {
+      if (bl.kind === "pagebreak") { pendingBreak = true; return; }
+      var ppr = (pendingBreak ? "<w:pageBreakBefore/>" : "") + DOCX_PARA[bl.kind];
+      pendingBreak = false;
+      out.push("<w:p>" + (ppr ? "<w:pPr>" + ppr + "</w:pPr>" : "") + bl.runs.map(function (r) { return docxRun(r, bl.kind); }).join("") + "</w:p>");
+    });
+    var cols = opts && opts.columns === 2 ? '<w:cols w:num="2" w:space="567"/>' : '<w:cols w:space="425"/>';
+    out.push('<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/>' + cols + "</w:sectPr>");
+    return out.join("");
+  }
+
+  var DOCX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="바탕" w:cs="Times New Roman"/><w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="en-US" w:eastAsia="ko-KR"/></w:rPr></w:rPrDefault>' +
+    '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="336" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>';
+
+  function buildDocx(doc) {
+    var blocks = buildBlocks(doc);
+    var documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>' +
+      buildDocxBody(blocks, doc.options) + "</w:body></w:document>";
+    return makeZip([
+      { name: "[Content_Types].xml", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>' },
+      { name: "_rels/.rels", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>' },
+      { name: "docProps/core.xml", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>' + xmlEscape(doc.title || "") + "</dc:title></cp:coreProperties>" },
+      { name: "word/_rels/document.xml.rels", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+      { name: "word/document.xml", data: documentXml },
+      { name: "word/styles.xml", data: DOCX_STYLES }
+    ]);
+  }
+
   var VM = {
     CIRCLED: CIRCLED,
     TYPES: TYPES,
@@ -560,7 +616,8 @@
     buildSectionXml: buildSectionXml,
     makeZip: makeZip,
     crc32: crc32,
-    buildHwpx: buildHwpx
+    buildHwpx: buildHwpx,
+    buildDocx: buildDocx
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = VM;

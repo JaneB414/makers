@@ -17,7 +17,7 @@
   // Claude 화면 안에서 열렸을 때만 쓸 수 있는 기능 (AI 바로 만들기, 파일 저장 확인창)
   if (window.claude && typeof window.claude.use === "function") {
     window.claude.use("sample").then(function (s) { sampleFn = s; updateManualIntro(); }).catch(function () {});
-    window.claude.use("downloads").then(function (d) { downloadsCap = d; }).catch(function () {});
+    window.claude.use("downloads").then(function (d) { downloadsCap = d; updateSaveHint(); }).catch(function () {});
   }
 
   // ---------- 저장 ----------
@@ -308,25 +308,34 @@
       await downloadsCap.save({ filename: name, data: blob });
       return "saved";
     } catch (e) {
-      if (e && e.code === "rejected_extension" && /\.hwpx$/.test(name)) {
-        await downloadsCap.save({ filename: name + ".zip", data: blob });
-        return "zip";
-      }
       if (e && e.code === "declined") return "declined";
       throw e;
     }
   }
 
-  async function saveHwpx() {
+  // Claude 화면 안에서는 .hwpx 저장이 막혀 있어, 한글에서 바로 열리는 .docx로 저장한다.
+  function hangulFormat() {
+    return downloadsCap ? "docx" : "hwpx";
+  }
+
+  function updateSaveHint() {
+    $("save-hint").textContent = hangulFormat() === "docx"
+      ? "이 화면에서는 한글 파일을 .docx 형식으로 저장해요. 한글에서 바로 열리고, 한글의 [다른 이름으로 저장]에서 HWP로 바꿀 수 있어요."
+      : "한글 파일은 .hwpx 형식으로 저장해요. 한글 2014 이상에서 열려요.";
+  }
+
+  async function saveHangul() {
     if (!state.problems.length) return show($("save-status"), "err", "저장할 문제가 없어요.");
+    var fmt = hangulFormat();
     try {
-      var bytes = VM.buildHwpx(HWPX_TEMPLATE, docModel());
-      var r = await offerFile(fileBase() + ".hwpx", new Blob([bytes], { type: "application/hwp+zip" }));
-      if (r === "zip") show($("save-status"), "warn", "이 화면에서는 .hwpx 이름으로 저장할 수 없어 끝에 .zip을 붙였어요. 파일 이름에서 .zip을 지우면 한글에서 열려요.");
-      else if (r === "declined") show($("save-status"), "", "저장을 취소했어요.");
-      else show($("save-status"), "ok", "HWPX 파일을 저장했어요. 한글(2014 이상)에서 열 수 있어요.");
+      var r = fmt === "docx"
+        ? await offerFile(fileBase() + ".docx", new Blob([VM.buildDocx(docModel())], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }))
+        : await offerFile(fileBase() + ".hwpx", new Blob([VM.buildHwpx(HWPX_TEMPLATE, docModel())], { type: "application/hwp+zip" }));
+      if (r === "declined") show($("save-status"), "", "저장을 취소했어요.");
+      else if (fmt === "docx") show($("save-status"), "ok", "한글 파일(.docx)을 저장했어요. 한글에서 열어 [파일 → 다른 이름으로 저장]을 누르면 HWP로 바꿀 수 있어요.");
+      else show($("save-status"), "ok", "한글 파일(.hwpx)을 저장했어요.");
     } catch (e) {
-      show($("save-status"), "err", "HWPX 저장에 실패했어요: " + (e.message || e.code || e));
+      show($("save-status"), "err", "한글 파일 저장에 실패했어요: " + (e.message || e.code || e));
     }
   }
 
@@ -385,6 +394,7 @@
         .concat(VM.makeInsert(VM.splitSentences(SAMPLE), 1, VM.makeRng(5)))
         .concat(VM.makeArrange(VM.splitSentences(SAMPLE), 1, VM.makeRng(8)));
     }
+    updateSaveHint();
     renderTypes();
     renderSentences();
     renderSheet();
@@ -397,7 +407,7 @@
     $("stop").addEventListener("click", function () { if (aborter) aborter.abort(); });
     $("copy-prompt").addEventListener("click", copyPrompt);
     $("load-ai").addEventListener("click", loadAi);
-    $("save-hwpx").addEventListener("click", saveHwpx);
+    $("save-hwpx").addEventListener("click", saveHangul);
     $("save-pdf").addEventListener("click", savePdf);
     $("select-auto").addEventListener("click", function () {
       VM.TYPES.forEach(function (t) { setSel(t.key, t.mode === "auto", (state.selection[t.key] || {}).count || 1); });

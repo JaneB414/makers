@@ -13,7 +13,7 @@
 <div class="wrap">
   <header class="top">
     <h1>영어 변형문제 메이커</h1>
-    <p>지문 하나로 모의고사 유형 변형문제를 만들어 HWPX·PDF로 저장합니다.</p>
+    <p>지문 하나로 모의고사 유형 변형문제를 만들어 한글·PDF 파일로 저장합니다.</p>
   </header>
 
   <div class="layout">
@@ -69,7 +69,7 @@
         <div class="sheet-bar">
           <h2 id="h-sheet">문제지 <span class="hint" id="count">0문제</span></h2>
           <div class="row">
-            <button type="button" id="save-hwpx" class="primary">HWPX 저장</button>
+            <button type="button" id="save-hwpx" class="primary">한글 파일 저장</button>
             <button type="button" id="save-pdf">PDF 저장</button>
             <button type="button" id="clear">모두 지우기</button>
           </div>
@@ -85,8 +85,9 @@
         <div class="row">
           <label class="check"><input type="checkbox" id="opt-answers" checked> 정답지 붙이기</label>
           <label class="check"><input type="checkbox" id="opt-expl" checked> 해설 넣기</label>
-          <label class="check"><input type="checkbox" id="opt-cols"> HWPX 2단 편집</label>
+          <label class="check"><input type="checkbox" id="opt-cols"> 한글 파일 2단 편집</label>
         </div>
+        <p class="hint" id="save-hint"></p>
         <div id="save-status" class="msg" hidden></div>
         <div id="confirm-clear" class="msg warn" hidden>
           문제를 모두 지울까요?

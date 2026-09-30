@@ -116,7 +116,7 @@ details summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }
 <div class="wrap">
   <header class="top">
     <h1>영어 변형문제 메이커</h1>
-    <p>지문 하나로 모의고사 유형 변형문제를 만들어 HWPX·PDF로 저장합니다.</p>
+    <p>지문 하나로 모의고사 유형 변형문제를 만들어 한글·PDF 파일로 저장합니다.</p>
   </header>
 
   <div class="layout">
@@ -172,7 +172,7 @@ details summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }
         <div class="sheet-bar">
           <h2 id="h-sheet">문제지 <span class="hint" id="count">0문제</span></h2>
           <div class="row">
-            <button type="button" id="save-hwpx" class="primary">HWPX 저장</button>
+            <button type="button" id="save-hwpx" class="primary">한글 파일 저장</button>
             <button type="button" id="save-pdf">PDF 저장</button>
             <button type="button" id="clear">모두 지우기</button>
           </div>
@@ -188,8 +188,9 @@ details summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }
         <div class="row">
           <label class="check"><input type="checkbox" id="opt-answers" checked> 정답지 붙이기</label>
           <label class="check"><input type="checkbox" id="opt-expl" checked> 해설 넣기</label>
-          <label class="check"><input type="checkbox" id="opt-cols"> HWPX 2단 편집</label>
+          <label class="check"><input type="checkbox" id="opt-cols"> 한글 파일 2단 편집</label>
         </div>
+        <p class="hint" id="save-hint"></p>
         <div id="save-status" class="msg" hidden></div>
         <div id="confirm-clear" class="msg warn" hidden>
           문제를 모두 지울까요?
@@ -752,6 +753,62 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     }));
   }
 
+  // ---------- DOCX (한글에서도 바로 열리는 Word 문서) ----------
+
+  var DOCX_PARA = {
+    title: '<w:jc w:val="center"/><w:spacing w:after="120"/>',
+    subtitle: '<w:jc w:val="center"/><w:spacing w:after="240"/>',
+    question: '<w:keepNext/><w:spacing w:before="280" w:after="80"/>',
+    box: '<w:pBdr><w:top w:val="single" w:sz="4" w:space="4" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="6" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="4" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="6" w:color="000000"/></w:pBdr><w:spacing w:before="60" w:after="60"/><w:ind w:left="200" w:right="120"/><w:jc w:val="both"/>',
+    para: '<w:jc w:val="both"/>',
+    choice: '<w:ind w:left="400"/>',
+    answer: ''
+  };
+
+  function docxRun(run, kind) {
+    var props = "";
+    if (run.b || kind === "title") props += "<w:b/>";
+    if (run.u) props += '<w:u w:val="single"/>';
+    if (kind === "title") props += '<w:sz w:val="30"/><w:szCs w:val="30"/>';
+    if (kind === "subtitle") props += '<w:sz w:val="18"/><w:szCs w:val="18"/>';
+    return "<w:r>" + (props ? "<w:rPr>" + props + "</w:rPr>" : "") + '<w:t xml:space="preserve">' + xmlEscape(run.text) + "</w:t></w:r>";
+  }
+
+  function buildDocxBody(blocks, opts) {
+    var out = [];
+    var pendingBreak = false;
+    blocks.forEach(function (bl) {
+      if (bl.kind === "pagebreak") { pendingBreak = true; return; }
+      var ppr = (pendingBreak ? "<w:pageBreakBefore/>" : "") + DOCX_PARA[bl.kind];
+      pendingBreak = false;
+      out.push("<w:p>" + (ppr ? "<w:pPr>" + ppr + "</w:pPr>" : "") + bl.runs.map(function (r) { return docxRun(r, bl.kind); }).join("") + "</w:p>");
+    });
+    var cols = opts && opts.columns === 2 ? '<w:cols w:num="2" w:space="567"/>' : '<w:cols w:space="425"/>';
+    out.push('<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/>' + cols + "</w:sectPr>");
+    return out.join("");
+  }
+
+  var DOCX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="바탕" w:cs="Times New Roman"/><w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="en-US" w:eastAsia="ko-KR"/></w:rPr></w:rPrDefault>' +
+    '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="336" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>';
+
+  function buildDocx(doc) {
+    var blocks = buildBlocks(doc);
+    var documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>' +
+      buildDocxBody(blocks, doc.options) + "</w:body></w:document>";
+    return makeZip([
+      { name: "[Content_Types].xml", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>' },
+      { name: "_rels/.rels", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>' },
+      { name: "docProps/core.xml", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>' + xmlEscape(doc.title || "") + "</dc:title></cp:coreProperties>" },
+      { name: "word/_rels/document.xml.rels", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+      { name: "word/document.xml", data: documentXml },
+      { name: "word/styles.xml", data: DOCX_STYLES }
+    ]);
+  }
+
   var VM = {
     CIRCLED: CIRCLED,
     TYPES: TYPES,
@@ -770,7 +827,8 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     buildSectionXml: buildSectionXml,
     makeZip: makeZip,
     crc32: crc32,
-    buildHwpx: buildHwpx
+    buildHwpx: buildHwpx,
+    buildDocx: buildDocx
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = VM;
@@ -797,7 +855,7 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
   // Claude 화면 안에서 열렸을 때만 쓸 수 있는 기능 (AI 바로 만들기, 파일 저장 확인창)
   if (window.claude && typeof window.claude.use === "function") {
     window.claude.use("sample").then(function (s) { sampleFn = s; updateManualIntro(); }).catch(function () {});
-    window.claude.use("downloads").then(function (d) { downloadsCap = d; }).catch(function () {});
+    window.claude.use("downloads").then(function (d) { downloadsCap = d; updateSaveHint(); }).catch(function () {});
   }
 
   // ---------- 저장 ----------
@@ -1088,25 +1146,34 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
       await downloadsCap.save({ filename: name, data: blob });
       return "saved";
     } catch (e) {
-      if (e && e.code === "rejected_extension" && /\.hwpx$/.test(name)) {
-        await downloadsCap.save({ filename: name + ".zip", data: blob });
-        return "zip";
-      }
       if (e && e.code === "declined") return "declined";
       throw e;
     }
   }
 
-  async function saveHwpx() {
+  // Claude 화면 안에서는 .hwpx 저장이 막혀 있어, 한글에서 바로 열리는 .docx로 저장한다.
+  function hangulFormat() {
+    return downloadsCap ? "docx" : "hwpx";
+  }
+
+  function updateSaveHint() {
+    $("save-hint").textContent = hangulFormat() === "docx"
+      ? "이 화면에서는 한글 파일을 .docx 형식으로 저장해요. 한글에서 바로 열리고, 한글의 [다른 이름으로 저장]에서 HWP로 바꿀 수 있어요."
+      : "한글 파일은 .hwpx 형식으로 저장해요. 한글 2014 이상에서 열려요.";
+  }
+
+  async function saveHangul() {
     if (!state.problems.length) return show($("save-status"), "err", "저장할 문제가 없어요.");
+    var fmt = hangulFormat();
     try {
-      var bytes = VM.buildHwpx(HWPX_TEMPLATE, docModel());
-      var r = await offerFile(fileBase() + ".hwpx", new Blob([bytes], { type: "application/hwp+zip" }));
-      if (r === "zip") show($("save-status"), "warn", "이 화면에서는 .hwpx 이름으로 저장할 수 없어 끝에 .zip을 붙였어요. 파일 이름에서 .zip을 지우면 한글에서 열려요.");
-      else if (r === "declined") show($("save-status"), "", "저장을 취소했어요.");
-      else show($("save-status"), "ok", "HWPX 파일을 저장했어요. 한글(2014 이상)에서 열 수 있어요.");
+      var r = fmt === "docx"
+        ? await offerFile(fileBase() + ".docx", new Blob([VM.buildDocx(docModel())], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }))
+        : await offerFile(fileBase() + ".hwpx", new Blob([VM.buildHwpx(HWPX_TEMPLATE, docModel())], { type: "application/hwp+zip" }));
+      if (r === "declined") show($("save-status"), "", "저장을 취소했어요.");
+      else if (fmt === "docx") show($("save-status"), "ok", "한글 파일(.docx)을 저장했어요. 한글에서 열어 [파일 → 다른 이름으로 저장]을 누르면 HWP로 바꿀 수 있어요.");
+      else show($("save-status"), "ok", "한글 파일(.hwpx)을 저장했어요.");
     } catch (e) {
-      show($("save-status"), "err", "HWPX 저장에 실패했어요: " + (e.message || e.code || e));
+      show($("save-status"), "err", "한글 파일 저장에 실패했어요: " + (e.message || e.code || e));
     }
   }
 
@@ -1165,6 +1232,7 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
         .concat(VM.makeInsert(VM.splitSentences(SAMPLE), 1, VM.makeRng(5)))
         .concat(VM.makeArrange(VM.splitSentences(SAMPLE), 1, VM.makeRng(8)));
     }
+    updateSaveHint();
     renderTypes();
     renderSentences();
     renderSheet();
@@ -1177,7 +1245,7 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     $("stop").addEventListener("click", function () { if (aborter) aborter.abort(); });
     $("copy-prompt").addEventListener("click", copyPrompt);
     $("load-ai").addEventListener("click", loadAi);
-    $("save-hwpx").addEventListener("click", saveHwpx);
+    $("save-hwpx").addEventListener("click", saveHangul);
     $("save-pdf").addEventListener("click", savePdf);
     $("select-auto").addEventListener("click", function () {
       VM.TYPES.forEach(function (t) { setSel(t.key, t.mode === "auto", (state.selection[t.key] || {}).count || 1); });

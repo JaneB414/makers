@@ -105,3 +105,16 @@ test("HWPX: mimetype이 맨 앞·무압축이고 본문에 문제가 들어간�
 test("zip의 CRC32 값이 표준과 같다", () => {
   assert.strictEqual(VM.crc32(Buffer.from("123456789")), 0xCBF43926);
 });
+
+test("DOCX: 필요한 부분이 들어 있고 상자·밑줄·2단·쪽 나눔이 표시된다", () => {
+  const problems = VM.makeInsert(SENTS, 1, VM.makeRng(6)).concat([
+    { type: "grammar", instruction: "어법 & <테스트>", passage: "He <u>①go</u> home.", choices: null, answer: "①", boxFirst: true }
+  ]);
+  const text = Buffer.from(VM.buildDocx({ title: "시험", problems, options: { answers: true, explanations: true, columns: 2 } })).toString("utf8");
+  for (const part of ["[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/styles.xml"]) assert.ok(text.includes(part), part);
+  assert.ok(text.includes("어법 &amp; &lt;테스트&gt;"));
+  assert.ok(text.includes('<w:u w:val="single"/></w:rPr><w:t xml:space="preserve">①go</w:t>'));
+  assert.ok(text.includes("<w:pBdr>"), "상자");
+  assert.ok(text.includes('<w:cols w:num="2"'));
+  assert.ok(text.includes("<w:pageBreakBefore/>"));
+});
