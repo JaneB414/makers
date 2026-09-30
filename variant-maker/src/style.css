@@ -153,6 +153,7 @@ details .sub { display: grid; gap: 8px; margin-top: 8px; }
 .page .k-choice.first { margin-top: 6px; }
 .page .k-answerLine { margin: 6px 0 0 27px; }
 .page .k-ansTitle { font: 700 18.67px/1.4 var(--en), var(--kr-serif); text-align: center; margin-bottom: 10px; }
+.page .k-roundTitle { font: 700 18.67px/1.4 var(--en), var(--kr-serif); text-align: center; color: var(--navy); margin: 4px 0 2px; }
 .page .k-ans { font-size: 12.67px; line-height: 1.5; padding-left: 1.8em; text-indent: -1.8em; margin-bottom: 2px; }
 .page .r-ansNum { color: var(--navy); font-weight: 700; }
 .page .r-explain { color: #444; font-size: 11.33px; }

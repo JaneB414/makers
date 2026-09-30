@@ -42,6 +42,18 @@ test("문장삽입: 정답 자리에 주어진 문장을 넣으면 원문이 된
   }
 });
 
+test("정답 뽑개: 여러 지문에 걸쳐 정답 번호가 골고루 나온다", () => {
+  const rng = VM.makeRng(9), deck = VM.answerDeck(rng);
+  for (const maker of [VM.makeOrder, VM.makeInsert]) {
+    const d = VM.answerDeck(rng);
+    const answers = [];
+    for (let k = 0; k < 5; k++) answers.push(...maker(SENTS, 2, rng, d).map((p) => p.answer));
+    const counts = VM.CIRCLED.map((c) => answers.filter((a) => a === c).length);
+    assert.ok(Math.max(...counts) - Math.min(...counts) <= 2, maker.name + " " + counts);
+  }
+  assert.ok(deck() >= 0);
+});
+
 test("문장삽입: 문장이 적으면 자리 수를 줄인다", () => {
   const short = SENTS.slice(0, 4);
   const [p] = VM.makeInsert(short, 1, VM.makeRng(3));
@@ -84,6 +96,28 @@ test("문제 정렬: 유형 순서대로 묶고, 같은 유형 안에서는 지�
   const sorted = VM.sortProblems([mk("order", "30"), mk("title", "30"), mk("compose", "29"), mk("order", "29"), mk("title", "29"), mk("claim", null)], (s) => rank[s.no]);
   assert.deepStrictEqual(sorted.map((p) => p.type + (p.source ? p.source.no : "")), ["claim", "title29", "title30", "order29", "order30", "compose29"]);
   assert.deepStrictEqual(VM.TYPES.map((t) => t.name), ["주장", "요지", "주제", "제목", "함축적 의미", "어법", "어휘", "빈칸", "순서", "문장삽입", "요약", "어법 오류 고치기", "서술형 문장배열", "한글 문장 영작"]);
+});
+
+test("회차: 유형 안에서 지문들이 1회차, 2회차 순서로 번갈아 나온다", () => {
+  const mk = (type, no, tag) => ({ type, tag, source: { exam: "3강", no } });
+  const rank = { A: 0, P1: 1, P2: 2 };
+  const made = [mk("claim", "A", "a1"), mk("claim", "A", "a2"), mk("claim", "P1", "p1"), mk("claim", "P1", "p1b"), mk("claim", "P2", "q1"), mk("claim", "P2", "q2"), mk("title", "A", "t1"), mk("title", "A", "t2")];
+  const inType = VM.sortProblems(made, (s) => rank[s.no]);
+  assert.deepStrictEqual(inType.map((p) => p.tag), ["a1", "p1", "q1", "a2", "p1b", "q2", "t1", "t2"]);
+  assert.deepStrictEqual(inType.map((p) => p.round), [0, 0, 0, 1, 1, 1, 0, 1]);
+  const again = VM.sortProblems(inType, (s) => rank[s.no]);
+  assert.deepStrictEqual(again.map((p) => p.tag), inType.map((p) => p.tag), "다시 정렬해도 그대로");
+  const byRound = VM.sortProblems(inType, (s) => rank[s.no], true);
+  assert.deepStrictEqual(byRound.map((p) => p.tag), ["a1", "p1", "q1", "t1", "a2", "p1b", "q2", "t2"]);
+});
+
+test("회차별로 나누기: 회차 제목, 새 쪽, 번호를 1부터 다시", () => {
+  const mk = (round, type) => ({ type, round, instruction: "q", passage: "p", choices: null, answer: "①", source: null });
+  const blocks = VM.buildBlocks({ title: "t", problems: [mk(0, "claim"), mk(0, "title"), mk(1, "claim"), mk(1, "title")], options: { rounds: true, answers: true } });
+  const seq = blocks.filter((b) => ["roundTitle", "ask", "pagebreak"].includes(b.kind)).map((b) => b.kind === "ask" ? b.runs[0].text : b.kind === "roundTitle" ? b.runs[0].text : "|");
+  assert.deepStrictEqual(seq, ["1회차", "1", "2", "|", "2회차", "1", "2", "|"]);
+  const ans = blocks.filter((b) => b.kind === "ans").map((b) => b.runs[0].text);
+  assert.deepStrictEqual(ans, ["[1회차]", "1)", "2)", "[2회차]", "1)", "2)"]);
 });
 
 test("정답지에는 정답과 해설만 나온다", () => {

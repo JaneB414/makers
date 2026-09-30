@@ -378,7 +378,8 @@
 
   function srcOf(exam, p) { return p.no ? { exam: exam, no: p.no } : null; }
 
-  // 문제는 늘 유형 순서대로 묶고, 같은 유형 안에서는 지문 순서(교재 순서 → 지문 번호 순서)로 놓는다.
+  // 문제는 늘 유형 순서대로 묶고, 같은 유형 안에서는 회차 → 지문 순서(교재 순서 → 지문 번호 순서)로 놓는다.
+  // '회차별로 나누기'를 켜면 회차 → 유형 → 지문 순서.
   function sortAll() {
     var rank = {}, n = 0;
     lib.exams.forEach(function (e) {
@@ -387,7 +388,7 @@
     state.problems = VM.sortProblems(state.problems, function (src) {
       var r = rank[(src.exam || "") + "\u0001" + src.no];
       return r === undefined ? null : r;
-    });
+    }, !!state.options.rounds);
   }
 
   function insertProblems(list) {
@@ -404,11 +405,13 @@
     var rng = VM.makeRng();
     var byLine = $("by-line").checked && !target.fromLibrary;
     var made = 0, errors = [];
+    var decks = {}; // 유형마다 정답 번호 뽑개 하나를 모든 지문이 함께 쓴다
     target.passages.forEach(function (p) {
       var sents = VM.splitSentences(p.text, byLine);
       types.filter(function (t) { return t.mode === "auto"; }).forEach(function (t) {
         try {
-          var ps = VM.AUTO_MAKERS[t.type](sents, t.count, rng);
+          decks[t.type] = decks[t.type] || VM.answerDeck(rng);
+          var ps = VM.AUTO_MAKERS[t.type](sents, t.count, rng, decks[t.type]);
           ps.forEach(function (x) { x.source = srcOf(p.exam, p); });
           insertProblems(ps);
           made += ps.length;
@@ -597,14 +600,15 @@
       if (HEAD_KINDS[bl.kind]) return;
       if (bl.kind === "pagebreak") { out.push({ pagebreak: true }); cur = null; return; }
       var prevKind = blocks[i - 1] && blocks[i - 1].kind;
-      var starts = bl.kind === "src" || bl.kind === "ansTitle" ||
-        (bl.kind === "ask" && prevKind !== "src") ||
+      var starts = bl.kind === "ansTitle" || bl.kind === "roundTitle" ||
+        (bl.kind === "src" && prevKind !== "roundTitle") ||
+        (bl.kind === "ask" && prevKind !== "src" && prevKind !== "roundTitle") ||
         (bl.kind === "ans" && prevKind !== "ansTitle");
       if (starts || !cur) {
         cur = { blocks: [], problem: null };
-        if (bl.kind === "src" || bl.kind === "ask") cur.problem = ++qIndex;
         out.push(cur);
       }
+      if ((bl.kind === "src" || bl.kind === "ask") && cur.problem === null && !(bl.kind === "ask" && prevKind === "src")) cur.problem = ++qIndex;
       cur.blocks.push({ bl: bl, prev: blocks[i - 1], next: blocks[i + 1] });
     });
     return out;
@@ -672,8 +676,9 @@
       if (u.pagebreak) { newPage(); return; }
       var els = u.blocks.map(function (x) { return blockEl(x.bl, x.prev, x.next); });
       if (u.problem !== null) {
-        els[0].style.position = "relative";
-        els[0].appendChild(problemTools(u.problem));
+        var host = els[u.blocks[0].bl.kind === "roundTitle" ? 1 : 0];
+        host.style.position = "relative";
+        host.appendChild(problemTools(u.problem));
       }
       var col = cols[ci];
       els.forEach(function (el) { col.appendChild(el); });
@@ -842,6 +847,8 @@
     $("opt-cols").checked = state.options.columns !== 1;
     $("opt-answers").checked = state.options.answers !== false;
     $("opt-expl").checked = state.options.explanations !== false;
+    $("opt-rounds").checked = !!state.options.rounds;
+    $("opt-rounds").addEventListener("change", function () { state.options.rounds = $("opt-rounds").checked; saveState(); renderPages(); });
     $("opt-name").addEventListener("change", function () { state.layout.showName = $("opt-name").checked; saveState(); renderPages(); });
     $("opt-cols").addEventListener("change", function () { state.options.columns = $("opt-cols").checked ? 2 : 1; saveState(); renderPages(); });
     $("opt-answers").addEventListener("change", function () { state.options.answers = $("opt-answers").checked; saveState(); renderPages(); });

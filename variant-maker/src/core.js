@@ -128,11 +128,20 @@
     return configs;
   }
 
-  function makeOrder(sentences, count, rng) {
+  // 정답 번호 뽑개: ①~⑤를 섞어 한 바퀴씩 돌려준다. 여러 지문에 같은 뽑개를 쓰면 전체에서 정답이 골고루 나온다.
+  function answerDeck(rng) {
+    var bag = [];
+    return function () {
+      if (!bag.length) bag = rng.shuffle(range(5));
+      return bag.pop();
+    };
+  }
+
+  function makeOrder(sentences, count, rng, deck) {
     var n = sentences.length;
     if (n < 4) throw new Error("순서 문제는 문장이 4개 이상 필요합니다. (지금 " + n + "개)");
     var configs = rng.shuffle(orderConfigs(n));
-    var answers = spreadAnswers(count, 5, rng);
+    var answers = deck ? range(count).map(function () { return deck(); }) : spreadAnswers(count, 5, rng);
     var problems = [];
     for (var k = 0; k < count; k++) {
       var c = configs[k % configs.length];
@@ -160,7 +169,7 @@
 
   var LINKERS = /^(however|but|yet|still|thus|therefore|hence|consequently|as a result|for example|for instance|in addition|moreover|furthermore|besides|also|similarly|likewise|in contrast|on the other hand|instead|otherwise|nevertheless|nonetheless|meanwhile|then|this|these|that|those|such|it|they|he|she|its|their|his|her|in other words|in fact|indeed|after all|unfortunately|fortunately)\b/i;
 
-  function makeInsert(sentences, count, rng) {
+  function makeInsert(sentences, count, rng, deck) {
     var n = sentences.length;
     if (n < 4) throw new Error("문장삽입 문제는 문장이 4개 이상 필요합니다. (지금 " + n + "개)");
     // 빼낼 문장 후보: 첫 문장 제외. 연결어·지시어로 시작하는 문장을 먼저 쓴다.
@@ -171,13 +180,27 @@
     var slots = n - 1; // 남은 문장 뒤의 자리 수
     var markers = Math.min(5, slots);
     var problems = [];
+    // 자리 번호 p(1..slots)는 남은 문장 p번째 바로 뒤. 정답 자리는 removed.
+    function slotRange(removed) { return { lo: Math.max(1, removed - markers + 1), hi: Math.min(removed, slots - markers + 1) }; }
+    var used = [];
     for (var k = 0; k < count; k++) {
-      var removed = order[k % order.length];
+      var removed, startSlot;
+      if (deck) {
+        // 뽑개가 정한 정답 번호를 만들 수 있는 문장을 앞에서부터 고른다(없으면 가장 가까운 번호).
+        var want = deck();
+        var fresh = order.filter(function (i) { return used.indexOf(i) < 0; });
+        if (!fresh.length) { used = []; fresh = order; }
+        removed = fresh.filter(function (i) { var w = slotRange(i); return i - want >= w.lo && i - want <= w.hi; })[0];
+        if (removed === undefined) removed = fresh[0];
+        var w = slotRange(removed);
+        startSlot = Math.max(w.lo, Math.min(w.hi, removed - want));
+      } else {
+        removed = order[k % order.length];
+        var w2 = slotRange(removed);
+        startSlot = rng.int(w2.lo, w2.hi);
+      }
+      used.push(removed);
       var remaining = sentences.filter(function (_, i) { return i !== removed; });
-      // 자리 번호 p(1..slots)는 remaining[p-1] 바로 뒤. 정답 자리는 removed.
-      var lo = Math.max(1, removed - markers + 1);
-      var hi = Math.min(removed, slots - markers + 1);
-      var startSlot = rng.int(lo, hi);
       var parts = [];
       for (var i = 0; i < remaining.length; i++) {
         parts.push(remaining[i]);
@@ -442,17 +465,28 @@
 
   // ---------- 문제 정렬 ----------
 
-  // 유형 순서(TYPES)대로 묶고, 같은 유형 안에서는 지문 순서대로 놓는다.
+  // 문제를 정렬하고 각 문제에 회차(round, 0부터)를 매긴다.
+  // 회차: 같은 지문·같은 유형에서 몇 번째로 만든 문제인가.
+  // 기본: 유형 → 회차 → 지문 순서. 즉 유형 안에서 지문들이 1회차, 2회차… 로 번갈아 나온다.
+  // roundsFirst: 회차 → 유형 → 지문 순서. 1회차 시험지 전체, 2회차 시험지 전체로 나뉜다.
   // passageRank(source)는 지문의 순서 번호를 돌려준다. 같으면 원래 순서를 지킨다.
-  function sortProblems(problems, passageRank) {
+  function sortProblems(problems, passageRank, roundsFirst) {
+    var seen = {};
     function typeRank(p) { return TYPE_BY_KEY[p.type] ? TYPE_BY_KEY[p.type].order : TYPES.length; }
     function srcRank(p) {
       var r = p.source && passageRank ? passageRank(p.source) : null;
       return r == null ? Infinity : r;
     }
-    return problems.map(function (p, i) { return { p: p, i: i, t: typeRank(p), s: srcRank(p) }; })
-      .sort(function (a, b) { return a.t - b.t || (a.s === b.s ? 0 : a.s < b.s ? -1 : 1) || a.i - b.i; })
-      .map(function (x) { return x.p; });
+    function cmp(a, b) { return a === b ? 0 : a < b ? -1 : 1; }
+    return problems.map(function (p, i) {
+      var key = p.type + "\u0001" + (p.source ? (p.source.exam || "") + "\u0001" + p.source.no : "#" + i);
+      var r = seen[key] || 0;
+      seen[key] = r + 1;
+      p.round = r;
+      return { p: p, i: i, t: typeRank(p), s: srcRank(p), r: r };
+    }).sort(function (a, b) {
+      return (roundsFirst ? a.r - b.r || a.t - b.t : a.t - b.t || a.r - b.r) || cmp(a.s, b.s) || a.i - b.i;
+    }).map(function (x) { return x.p; });
   }
 
   // ---------- 서식 문자열 (<u>, <b>) ----------
@@ -509,12 +543,26 @@
     blocks.push({ kind: "nameLine", runs: [plain(layout.showName === false ? "" : "반 ________   번호 ________   이름 ________________")] });
 
     var labels = sourceLabels(doc.problems);
+    // 회차 나누기: 회차마다 제목을 달고(2회차부터 새 쪽), 문항 번호를 1부터 다시 센다.
+    var byRound = !!opts.rounds && doc.problems.some(function (p) { return p.round > 0; });
+    var nums = [], lastRound = null, n = 0;
+    doc.problems.forEach(function (p) {
+      var r = p.round || 0;
+      if (byRound && r !== lastRound) { n = 0; lastRound = r; }
+      nums.push(++n);
+    });
+    lastRound = null;
     doc.problems.forEach(function (p, i) {
+      if (byRound && (p.round || 0) !== lastRound) {
+        if (lastRound !== null) blocks.push({ kind: "pagebreak", runs: [] });
+        lastRound = p.round || 0;
+        blocks.push({ kind: "roundTitle", runs: [plain((lastRound + 1) + "회차")] });
+      }
       if (labels[i]) blocks.push({ kind: "src", runs: [plain(labels[i])] });
       blocks.push({
         kind: "ask",
         first: !labels[i],
-        runs: [plain(String(i + 1), "num"), { text: "", u: false, b: false, tab: true }].concat(parseRuns(p.instruction))
+        runs: [plain(String(nums[i]), "num"), { text: "", u: false, b: false, tab: true }].concat(parseRuns(p.instruction))
       });
       var boxBlocks = p.box ? String(p.box).split(/\n/).filter(function (l) { return l.trim(); }).map(function (l) { return { kind: "box", runs: parseRuns(l) }; }) : [];
       var paraBlocks = String(p.passage || "").split(/\n/).filter(function (l) { return l.trim(); }).map(function (l) { return { kind: "para", runs: parseRuns(l) }; });
@@ -531,8 +579,13 @@
     if (opts.answers !== false && doc.problems.length) {
       blocks.push({ kind: "pagebreak", runs: [] });
       blocks.push({ kind: "ansTitle", runs: [plain("정답" + (opts.explanations ? " 및 해설" : ""))] });
+      lastRound = null;
       doc.problems.forEach(function (p, i) {
-        var runs = [plain((i + 1) + ")", "ansNum"), plain(" ")].concat(parseRuns(p.answer || "-"));
+        if (byRound && (p.round || 0) !== lastRound) {
+          lastRound = p.round || 0;
+          blocks.push({ kind: "ans", round: true, runs: [plain("[" + (lastRound + 1) + "회차]", "ansNum")] });
+        }
+        var runs = [plain(nums[i] + ")", "ansNum"), plain(" ")].concat(parseRuns(p.answer || "-"));
         if (opts.explanations && p.explanation) {
           runs.push(plain("  "));
           runs = runs.concat(parseRuns(p.explanation).map(function (r) { r.role = "explain"; return r; }));
@@ -551,11 +604,11 @@
 
   var KIND_CHAR = {
     eyebrow: "eyebrow", title: "title", nameLine: "name", src: "src", ask: "ask",
-    box: "body", para: "body", choice: "body", answerLine: "body", ansTitle: "ansTitle", ans: "ans"
+    box: "body", para: "body", choice: "body", answerLine: "body", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle"
   };
   var KIND_PARA = {
     eyebrow: "eyebrow", title: "title", nameLine: "nameLine", src: "src", ask: "ask",
-    box: "box", para: "body", choice: "choice", answerLine: "answerLine", ansTitle: "ansTitle", ans: "ans"
+    box: "box", para: "body", choice: "choice", answerLine: "answerLine", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle"
   };
 
   // 굵게·밑줄 조합이 있는 글자 모양이면 그것을, 없으면 가장 가까운 것을 쓴다.
@@ -714,6 +767,7 @@
     choice: '<w:ind w:left="220" w:hanging="220"/>',
     answerLine: '<w:spacing w:before="40"/><w:ind w:left="' + ASK_TWIP + '"/>',
     ansTitle: '<w:spacing w:after="100"/><w:jc w:val="center"/>',
+    roundTitle: '<w:keepNext/><w:spacing w:after="100"/><w:jc w:val="center"/>',
     ans: '<w:spacing w:after="20" w:line="290" w:lineRule="auto"/><w:ind w:left="260" w:hanging="260"/>'
   };
 
@@ -793,6 +847,7 @@
     TYPES: TYPES,
     TYPE_BY_KEY: TYPE_BY_KEY,
     makeRng: makeRng,
+    answerDeck: answerDeck,
     splitSentences: splitSentences,
     makeOrder: makeOrder,
     makeInsert: makeInsert,
