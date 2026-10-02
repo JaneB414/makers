@@ -54,6 +54,44 @@ test("정답 뽑개: 여러 지문에 걸쳐 정답 번호가 골고루 나온�
   assert.ok(deck() >= 0);
 });
 
+test("정답 옮기기: 객관식은 선지를, 순서는 이름표를, 삽입은 자리 표시를 옮겨도 정답이 맞다", () => {
+  const rng = VM.makeRng(11);
+  const mc = { type: "title", choices: ["a", "b", "c", "d", "e"], answer: "②", explanation: "②가 정답, ④는 오답" };
+  VM.moveAnswer(mc, 4);
+  assert.deepStrictEqual([mc.choices, mc.answer, mc.explanation], [["a", "e", "c", "d", "b"], "⑤", "⑤가 정답, ④는 오답"]);
+  for (let t = 0; t < 5; t++) {
+    const [o] = VM.makeOrder(SENTS, 1, rng);
+    VM.moveAnswer(o, t);
+    assert.strictEqual(o.answer, VM.CIRCLED[t]);
+    const parts = {};
+    o.passage.split("\n").forEach((line) => { parts[line.slice(0, 3)] = line.slice(4); });
+    assert.strictEqual([o.box].concat(o.choices[t].split(" - ").map((l) => parts[l])).join(" "), SENTS.join(" "));
+  }
+  const [ins] = VM.makeInsert(SENTS, 1, rng);
+  VM.answerOptions(ins).forEach((t) => {
+    VM.moveAnswer(ins, t);
+    const restored = ins.passage.replace("( " + ins.answer + " )", ins.box).replace(/ ?\( [①②③④⑤] \)/g, "");
+    assert.strictEqual(restored, SENTS.join(" "));
+  });
+  assert.deepStrictEqual(VM.answerOptions({ type: "grammar", choices: null, answer: "③" }), []);
+});
+
+test("정답 고르게: 문제지 전체에서 ①~⑤가 고르게, 같은 지문끼리는 겹치지 않게", () => {
+  const problems = [];
+  ["A", "B", "C", "D"].forEach((no) => ["claim", "gist", "topic", "title", "blank"].forEach((type) => {
+    problems.push({ type, source: { exam: "E", no }, choices: ["1", "2", "3", "4", "5"], answer: "③", explanation: "" });
+  }));
+  problems.push({ type: "grammar", source: { exam: "E", no: "Z" }, choices: null, answer: "③" });
+  VM.balanceAnswers(problems, null, VM.makeRng(2));
+  const counts = VM.answerCounts(problems);
+  assert.ok(Math.max(...counts) - Math.min(...counts) <= 1, String(counts));
+  ["A", "B", "C", "D"].forEach((no) => {
+    const answers = problems.filter((p) => p.source.no === no).map((p) => p.answer);
+    assert.strictEqual(new Set(answers).size, answers.length, no + " " + answers);
+  });
+  problems.forEach((p) => { if (p.choices) assert.strictEqual(p.choices[VM.CIRCLED.indexOf(p.answer)], "3", "정답 선지 내용은 그대로"); });
+});
+
 test("문장삽입: 문장이 적으면 자리 수를 줄인다", () => {
   const short = SENTS.slice(0, 4);
   const [p] = VM.makeInsert(short, 1, VM.makeRng(3));

@@ -393,9 +393,22 @@
     }, !!state.options.rounds);
   }
 
+  // 새 문제를 넣고 정렬한 뒤, 새 문제의 정답 번호를 문제지 전체에서 ①~⑤가 고르게 되도록 맞춘다.
   function insertProblems(list) {
     state.problems = state.problems.concat(list);
     sortAll();
+    VM.balanceAnswers(state.problems, function (p) { return list.indexOf(p) >= 0; });
+  }
+
+  function rebalanceAll() {
+    sortAll();
+    VM.balanceAnswers(state.problems);
+    saveState(); renderPages();
+    show($("save-status"), "ok", "정답 번호를 다시 맞췄어요: " + answerSummary() + ". 어법·어휘처럼 지문 속에 번호가 있는 문제와 서술형은 그대로 두었어요.");
+  }
+
+  function answerSummary() {
+    return VM.answerCounts(state.problems).map(function (n, i) { return VM.CIRCLED[i] + n; }).join(" ");
   }
 
   function make() {
@@ -704,7 +717,7 @@
     var pagesEl = $("pages");
     pagesEl.textContent = "";
     sortAll(); // 예전에 만든 문제나 지문 번호를 바꾼 경우에도 순서를 맞춘다
-    $("count").textContent = state.problems.length + "문제";
+    $("count").textContent = state.problems.length + "문제" + (state.problems.length ? " · 정답 " + answerSummary() : "");
     var blocks = VM.buildBlocks(docModel());
     var pageNo = 1;
     var cols = makePage(pagesEl, pageNo, blocks.filter(function (b) { return HEAD_KINDS[b.kind]; }));
@@ -937,6 +950,7 @@
     $("load-ai").addEventListener("click", loadAi);
     $("save-hwpx").addEventListener("click", saveHangul);
     $("save-pdf").addEventListener("click", savePdf);
+    $("rebalance").addEventListener("click", rebalanceAll);
     $("select-auto").addEventListener("click", function () {
       VM.TYPES.forEach(function (t) { setSel(t.key, t.mode === "auto", (state.selection[t.key] || {}).count || 1); });
       renderTypes();

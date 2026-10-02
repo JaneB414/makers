@@ -302,6 +302,7 @@ details .sub { display: grid; gap: 8px; margin-top: 8px; }
           <div class="row">
             <button type="button" id="save-hwpx" class="primary">한글 파일 저장</button>
             <button type="button" id="save-pdf">PDF 저장</button>
+            <button type="button" id="rebalance" title="객관식 정답이 ①~⑤에 고르게 나오도록 선지 순서를 다시 맞춰요">정답 번호 고르게</button>
             <button type="button" id="clear">모두 지우기</button>
           </div>
         </div>
@@ -561,24 +562,30 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
       }
       used.push(removed);
       var remaining = sentences.filter(function (_, i) { return i !== removed; });
-      var parts = [];
-      for (var i = 0; i < remaining.length; i++) {
-        parts.push(remaining[i]);
-        var p = i + 1;
-        if (p >= startSlot && p < startSlot + markers) parts.push("( " + CIRCLED[p - startSlot] + " )");
-      }
       problems.push({
         type: "insert",
         instruction: TYPE_BY_KEY.insert.instruction,
         box: sentences[removed],
         boxFirst: true,
-        passage: parts.join(" "),
+        passage: insertPassage(remaining, startSlot, markers),
         choices: null,
         answer: CIRCLED[removed - startSlot],
-        explanation: "주어진 문장은 \"" + shorten(sentences[removed - 1], 60) + "\" 다음에 온다."
+        explanation: "주어진 문장은 \"" + shorten(sentences[removed - 1], 60) + "\" 다음에 온다.",
+        meta: { remaining: remaining, removed: removed, markers: markers } // 정답 번호를 나중에 옮길 때 쓴다
       });
     }
     return problems;
+  }
+
+  // 남은 문장 사이에 ( ① )~( ⑤ ) 자리 표시를 넣는다. 자리 p(1..)는 p번째 문장 바로 뒤.
+  function insertPassage(remaining, startSlot, markers) {
+    var parts = [];
+    for (var i = 0; i < remaining.length; i++) {
+      parts.push(remaining[i]);
+      var p = i + 1;
+      if (p >= startSlot && p < startSlot + markers) parts.push("( " + CIRCLED[p - startSlot] + " )");
+    }
+    return parts.join(" ");
   }
 
   function shorten(s, max) {
@@ -847,6 +854,107 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     }).sort(function (a, b) {
       return (roundsFirst ? a.r - b.r || a.t - b.t : a.t - b.t || a.r - b.r) || cmp(a.s, b.s) || a.i - b.i;
     }).map(function (x) { return x.p; });
+  }
+
+  // ---------- 정답 번호 고르게 ----------
+
+  // 이 문제의 정답을 옮길 수 있는 번호(0~4) 목록. 옮길 수 없으면 빈 목록.
+  // - 선지가 5개인 객관식: 선지 순서를 바꿔 어느 번호로든 옮긴다.
+  // - 순서: (A)(B)(C) 이름표를 바꿔 어느 번호로든 옮긴다.
+  // - 문장삽입: 자리 표시 ①~⑤의 시작 위치를 옮길 수 있는 만큼.
+  // - 어법·어휘처럼 지문 속에 번호가 박힌 문제와 서술형은 옮기지 않는다.
+  function answerOptions(p) {
+    var cur = CIRCLED.indexOf(p.answer);
+    if (cur < 0) return [];
+    if (p.type === "order") return /^\(A\) /m.test(p.passage || "") ? range(5) : [];
+    if (p.type === "insert") {
+      var m = p.meta;
+      if (!m || !m.remaining) return [];
+      var slots = m.remaining.length;
+      return range(m.markers).filter(function (t) {
+        var start = m.removed - t;
+        return start >= Math.max(1, m.removed - m.markers + 1) && start <= Math.min(m.removed, slots - m.markers + 1);
+      });
+    }
+    if (p.choices && p.choices.length === 5 && (p.type !== "grammar" && p.type !== "vocab")) return range(5);
+    return [];
+  }
+
+  // 정답을 t번(0~4)으로 옮긴다. 해설 속 원문자 번호도 함께 바꾼다.
+  function moveAnswer(p, t) {
+    var cur = CIRCLED.indexOf(p.answer);
+    if (cur < 0 || cur === t) return p;
+    if (p.type === "order") {
+      var byLabel = {};
+      String(p.passage).split("\n").forEach(function (line) { byLabel[line.slice(0, 3)] = line.slice(4); });
+      var oldPerm = ORDER_PERMS[cur], newPerm = ORDER_PERMS[t];
+      var chunks = oldPerm.map(function (li) { return byLabel[LABELS[li]]; }); // 실제 순서대로의 덩어리
+      var relabeled = [];
+      for (var pos = 0; pos < 3; pos++) relabeled[newPerm[pos]] = chunks[pos];
+      p.passage = relabeled.map(function (text, li) { return LABELS[li] + " " + text; }).join("\n");
+      p.explanation = "주어진 글 → " + newPerm.map(function (x) { return LABELS[x]; }).join(" → ");
+    } else if (p.type === "insert") {
+      p.passage = insertPassage(p.meta.remaining, p.meta.removed - t, p.meta.markers);
+    } else {
+      var tmp = p.choices[cur];
+      p.choices[cur] = p.choices[t];
+      p.choices[t] = tmp;
+      if (p.explanation) {
+        p.explanation = p.explanation.replace(/[①-⑤]/g, function (c) {
+          var i = CIRCLED.indexOf(c);
+          return i === cur ? CIRCLED[t] : i === t ? CIRCLED[cur] : c;
+        });
+      }
+    }
+    p.answer = CIRCLED[t];
+    return p;
+  }
+
+  function sourceKey(p) {
+    return p.source ? (p.source.exam || "") + "\u0001" + p.source.no + "\u0001" + (p.round || 0) : null;
+  }
+
+  // 문제지 전체에서 정답 번호가 ①~⑤ 골고루 나오도록 맞춘다. problems는 문제지 순서대로.
+  // shouldMove(p)가 참인 문제만 옮기고, 나머지는 있는 그대로 개수에 넣는다.
+  // 고르는 기준(작을수록 좋음): 같은 지문(같은 회차)에 이미 있는 번호는 크게 피하고, 그다음 지금까지 덜 나온 번호, 앞뒤 문제와 다른 번호를 고른다.
+  function balanceAnswers(problems, shouldMove, rng) {
+    rng = rng || makeRng();
+    var counts = [0, 0, 0, 0, 0];
+    var bySource = {};
+    function note(p) {
+      var a = CIRCLED.indexOf(p.answer);
+      if (a < 0) return;
+      counts[a]++;
+      var k = sourceKey(p);
+      if (k) (bySource[k] = bySource[k] || {})[a] = true;
+    }
+    var movable = [];
+    problems.forEach(function (p) {
+      if (shouldMove && !shouldMove(p)) note(p);
+      else if (answerOptions(p).length > 1) movable.push(p);
+      else note(p);
+    });
+    problems.forEach(function (p, i) {
+      if (movable.indexOf(p) < 0) return;
+      var prev = i > 0 ? CIRCLED.indexOf(problems[i - 1].answer) : -1;
+      var next = i < problems.length - 1 && movable.indexOf(problems[i + 1]) < 0 ? CIRCLED.indexOf(problems[i + 1].answer) : -1;
+      var same = bySource[sourceKey(p)] || {};
+      var best = null, bestScore = Infinity;
+      answerOptions(p).forEach(function (t) {
+        var score = counts[t] * 100 + (same[t] ? 150 : 0) + (t === prev || t === next ? 5 : 0) + rng.next();
+        if (score < bestScore) { bestScore = score; best = t; }
+      });
+      moveAnswer(p, best);
+      note(p);
+    });
+    return counts;
+  }
+
+  // 정답 번호별 개수 [①, ②, ③, ④, ⑤]
+  function answerCounts(problems) {
+    var c = [0, 0, 0, 0, 0];
+    problems.forEach(function (p) { var a = CIRCLED.indexOf(p.answer); if (a >= 0) c[a]++; });
+    return c;
   }
 
   // ---------- 서식 문자열 (<u>, <b>) ----------
@@ -1208,6 +1316,10 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     TYPE_BY_KEY: TYPE_BY_KEY,
     makeRng: makeRng,
     answerDeck: answerDeck,
+    answerOptions: answerOptions,
+    moveAnswer: moveAnswer,
+    balanceAnswers: balanceAnswers,
+    answerCounts: answerCounts,
     splitSentences: splitSentences,
     makeOrder: makeOrder,
     makeInsert: makeInsert,
@@ -1630,9 +1742,22 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     }, !!state.options.rounds);
   }
 
+  // 새 문제를 넣고 정렬한 뒤, 새 문제의 정답 번호를 문제지 전체에서 ①~⑤가 고르게 되도록 맞춘다.
   function insertProblems(list) {
     state.problems = state.problems.concat(list);
     sortAll();
+    VM.balanceAnswers(state.problems, function (p) { return list.indexOf(p) >= 0; });
+  }
+
+  function rebalanceAll() {
+    sortAll();
+    VM.balanceAnswers(state.problems);
+    saveState(); renderPages();
+    show($("save-status"), "ok", "정답 번호를 다시 맞췄어요: " + answerSummary() + ". 어법·어휘처럼 지문 속에 번호가 있는 문제와 서술형은 그대로 두었어요.");
+  }
+
+  function answerSummary() {
+    return VM.answerCounts(state.problems).map(function (n, i) { return VM.CIRCLED[i] + n; }).join(" ");
   }
 
   function make() {
@@ -1941,7 +2066,7 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     var pagesEl = $("pages");
     pagesEl.textContent = "";
     sortAll(); // 예전에 만든 문제나 지문 번호를 바꾼 경우에도 순서를 맞춘다
-    $("count").textContent = state.problems.length + "문제";
+    $("count").textContent = state.problems.length + "문제" + (state.problems.length ? " · 정답 " + answerSummary() : "");
     var blocks = VM.buildBlocks(docModel());
     var pageNo = 1;
     var cols = makePage(pagesEl, pageNo, blocks.filter(function (b) { return HEAD_KINDS[b.kind]; }));
@@ -2174,6 +2299,7 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     $("load-ai").addEventListener("click", loadAi);
     $("save-hwpx").addEventListener("click", saveHangul);
     $("save-pdf").addEventListener("click", savePdf);
+    $("rebalance").addEventListener("click", rebalanceAll);
     $("select-auto").addEventListener("click", function () {
       VM.TYPES.forEach(function (t) { setSel(t.key, t.mode === "auto", (state.selection[t.key] || {}).count || 1); });
       renderTypes();
