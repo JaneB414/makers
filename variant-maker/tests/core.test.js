@@ -96,6 +96,27 @@ test("정답 고르게: 앞뒤 문제와 겹치지 않고, 전체에서 ①~⑤�
   }
 });
 
+test("정답 고르게: 고정된 정답이 몰려 있어도 ①⑤①⑤나 네 칸 주기 같은 되풀이를 만들지 않는다", () => {
+  let aba = 0, pairs = 0, p4 = 0;
+  for (let seed = 0; seed < 50; seed++) {
+    const rng = VM.makeRng(seed);
+    const problems = [];
+    for (let k = 0; k < 30; k++) problems.push({ type: "title", choices: ["1", "2", "3", "4", "5"], answer: "③" });
+    for (let k = 0; k < 12; k++) problems.push({ type: "grammar", choices: null, answer: k % 2 ? "③" : "④" });
+    VM.balanceAnswers(problems, null, rng);
+    for (let i = 4; i < 30; i++) {
+      pairs++;
+      if (problems[i].answer === problems[i - 2].answer) aba++;
+      if (problems[i].answer === problems[i - 4].answer) p4++;
+    }
+    const counts = VM.answerCounts(problems);
+    assert.ok(Math.max(...counts) - Math.min(...counts) <= 1, "seed " + seed + ": " + counts);
+  }
+  // 무작위로 고르면 각각 약 20%. 한 칸 걸러 되풀이는 훨씬 적고, 네 칸 주기 되풀이도 두드러지지 않아야 한다.
+  assert.ok(aba / pairs < 0.1, "두 칸 앞과 같은 비율 " + (aba / pairs).toFixed(3));
+  assert.ok(p4 / pairs < 0.35, "네 칸 앞과 같은 비율 " + (p4 / pairs).toFixed(3));
+});
+
 test("문장삽입: 문장이 적으면 자리 수를 줄인다", () => {
   const short = SENTS.slice(0, 4);
   const [p] = VM.makeInsert(short, 1, VM.makeRng(3));

@@ -576,10 +576,11 @@
 
   // 문제지 전체에서 정답 번호가 ①~⑤ 골고루 나오도록 맞춘다. problems는 문제지 순서대로.
   // shouldMove(p)가 참인 문제만 옮기고(없으면 옮길 수 있는 문제 전부), 나머지는 있는 그대로 둔다.
-  // 고르는 기준(점수가 작은 번호를 고름):
-  //   1. 바로 앞·뒤 문제와 같은 번호는 피한다(다른 번호를 고를 수 없을 때만 허용).
-  //   2. 문제지 전체에서 덜 나온 번호를 고른다(뒤에 남은 고정 문제의 정답까지 셈).
-  //   3. 두 문제 앞, 같은 지문·같은 회차와 같은 번호는 조금 피하고, 나머지는 무작위로 섞는다.
+  //
+  // 1) 옮기지 않는 문제의 정답 개수를 세고, 전체가 고르게 되려면 옮길 문제에 번호별로 몇 개씩 줘야 하는지 정한다.
+  // 2) 그 몫을 문제지 처음부터 끝까지 고르게 나눠 쓴다(부족한 번호를 앞쪽에 몰아 쓰지 않는다).
+  // 3) 바로 앞·뒤 문제와 같은 번호는 다른 번호를 고를 수 없을 때만 쓰고,
+  //    두 문제 앞과 같은 번호(①⑤①⑤ 같은 되풀이)도 피하며, 나머지는 무작위로 섞어 주기적인 되풀이가 생기지 않게 한다.
   function balanceAnswers(problems, shouldMove, rng) {
     rng = rng || makeRng();
     var n = problems.length;
@@ -587,38 +588,44 @@
       var o = answerOptions(p);
       return o.length > 1 && (!shouldMove || shouldMove(p)) ? o : null;
     });
-    var counts = [0, 0, 0, 0, 0], future = [0, 0, 0, 0, 0];
-    problems.forEach(function (p, i) { var a = CIRCLED.indexOf(p.answer); if (!options[i] && a >= 0) future[a]++; });
-    var bySource = {};
-    var answers = [];
+    var fixedCount = [0, 0, 0, 0, 0], movableTotal = 0;
+    problems.forEach(function (p, i) {
+      if (options[i]) { movableTotal++; return; }
+      var a = CIRCLED.indexOf(p.answer);
+      if (a >= 0) fixedCount[a]++;
+    });
+    // 옮길 문제의 번호별 몫: 개수가 가장 적은 번호부터 하나씩 채운다.
+    var need = [0, 0, 0, 0, 0];
+    for (var k = 0; k < movableTotal; k++) {
+      var low = 0;
+      for (var t0 = 1; t0 < 5; t0++) if (fixedCount[t0] + need[t0] < fixedCount[low] + need[low]) low = t0;
+      need[low]++;
+    }
+    var got = [0, 0, 0, 0, 0], answers = [], done = 0;
     problems.forEach(function (p, i) {
       var a = CIRCLED.indexOf(p.answer);
-      if (!options[i]) {
-        if (a >= 0) future[a]--;
-      } else {
+      if (options[i]) {
         var prev = i > 0 ? answers[i - 1] : -1;
         var prev2 = i > 1 ? answers[i - 2] : -1;
+        var prev3 = i > 2 ? answers[i - 3] : -1;
+        var prev4 = i > 3 ? answers[i - 4] : -1;
         var next = i < n - 1 && !options[i + 1] ? CIRCLED.indexOf(problems[i + 1].answer) : -1;
-        var same = bySource[sourceKey(p)] || {};
-        var total = counts.map(function (c, t) { return c + future[t]; });
-        var least = Math.min.apply(null, total);
         var best = a, bestScore = Infinity;
         options[i].forEach(function (t) {
-          var score = (t === prev || t === next ? 10000 : 0) + (total[t] - least) * 50 +
-            (t === prev2 ? 15 : 0) + (same[t] ? 20 : 0) + rng.next() * 40;
+          var ahead = got[t] - need[t] * (done + 1) / movableTotal; // 계획보다 많이 썼으면 +
+          // 가중치는 모의 실험으로 정했다: 전체 개수 차이 1 이내, 두 칸 앞과 같은 비율 약 2%, 서너 칸 주기 되풀이 없음
+          var score = (t === prev || t === next ? 10000 : 0) + (got[t] >= need[t] ? 150 : 0) + ahead * 40 +
+            (t === prev2 ? 40 : 0) + (t === prev3 ? 5 : 0) + (t === prev4 ? 10 : 0) + rng.next() * 80;
           if (score < bestScore) { bestScore = score; best = t; }
         });
         moveAnswer(p, best);
         a = best;
+        got[a]++;
+        done++;
       }
       answers.push(a);
-      if (a >= 0) {
-        counts[a]++;
-        var k = sourceKey(p);
-        if (k) (bySource[k] = bySource[k] || {})[a] = true;
-      }
     });
-    return counts;
+    return answerCounts(problems);
   }
 
   // 정답 번호별 개수 [①, ②, ③, ④, ⑤]
