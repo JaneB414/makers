@@ -76,20 +76,24 @@ test("정답 옮기기: 객관식은 선지를, 순서는 이름표를, 삽입�
   assert.deepStrictEqual(VM.answerOptions({ type: "grammar", choices: null, answer: "③" }), []);
 });
 
-test("정답 고르게: 문제지 전체에서 ①~⑤가 고르게, 같은 지문끼리는 겹치지 않게", () => {
-  const problems = [];
-  ["A", "B", "C", "D"].forEach((no) => ["claim", "gist", "topic", "title", "blank"].forEach((type) => {
-    problems.push({ type, source: { exam: "E", no }, choices: ["1", "2", "3", "4", "5"], answer: "③", explanation: "" });
-  }));
-  problems.push({ type: "grammar", source: { exam: "E", no: "Z" }, choices: null, answer: "③" });
-  VM.balanceAnswers(problems, null, VM.makeRng(2));
-  const counts = VM.answerCounts(problems);
-  assert.ok(Math.max(...counts) - Math.min(...counts) <= 1, String(counts));
-  ["A", "B", "C", "D"].forEach((no) => {
-    const answers = problems.filter((p) => p.source.no === no).map((p) => p.answer);
-    assert.strictEqual(new Set(answers).size, answers.length, no + " " + answers);
-  });
-  problems.forEach((p) => { if (p.choices) assert.strictEqual(p.choices[VM.CIRCLED.indexOf(p.answer)], "3", "정답 선지 내용은 그대로"); });
+test("정답 고르게: 앞뒤 문제와 겹치지 않고, 전체에서 ①~⑤가 고르게", () => {
+  const types = ["claim", "gist", "topic", "title", "implied", "grammar", "vocab", "blank", "summary"];
+  for (let seed = 0; seed < 50; seed++) {
+    const rng = VM.makeRng(seed);
+    const problems = [];
+    types.forEach((type) => ["A", "B", "C", "D"].forEach((no) => {
+      const fixed = type === "grammar" || type === "vocab";
+      problems.push({ type, source: { exam: "E", no }, choices: fixed ? null : ["1", "2", "3", "4", "5"], answer: fixed ? VM.CIRCLED[rng.int(0, 4)] : "③", explanation: "" });
+    }));
+    VM.balanceAnswers(problems, null, rng);
+    const counts = VM.answerCounts(problems);
+    assert.ok(Math.max(...counts) - Math.min(...counts) <= 1, "seed " + seed + ": " + counts);
+    for (let i = 1; i < problems.length; i++) {
+      const fixedPair = !problems[i].choices && !problems[i - 1].choices;
+      if (!fixedPair) assert.notStrictEqual(problems[i].answer, problems[i - 1].answer, "seed " + seed + " #" + i);
+    }
+    problems.forEach((p) => { if (p.choices) assert.strictEqual(p.choices[VM.CIRCLED.indexOf(p.answer)], "3", "정답 선지 내용은 그대로"); });
+  }
 });
 
 test("문장삽입: 문장이 적으면 자리 수를 줄인다", () => {
@@ -126,6 +130,9 @@ test("AI 요청문에 지문과 유형이 들어간다", () => {
   assert.ok(prompt.includes("### 지문 [29]\n" + SENTS[0]));
   assert.ok(prompt.includes("### 지문 [30]"));
   assert.throws(() => VM.buildPrompt(PASSAGE, "order", 1));
+  assert.ok(VM.buildPrompt(PASSAGE, "grammar", 2, [1, 4]).includes("정답 번호는 문제 순서대로 ②, ⑤가 되게"));
+  const planned = VM.buildCombinedPrompt([{ no: "1", text: "a" }, { no: "2", text: "b" }], [{ type: "vocab", count: 1 }], { vocab: { "1": [2], "2": [0] } });
+  assert.ok(planned.includes("지문 [1] 어휘: 정답 번호를 문제 순서대로 ③로") && planned.includes("지문 [2] 어휘: 정답 번호를 문제 순서대로 ①로"));
 });
 
 test("문제 정렬: 유형 순서대로 묶고, 같은 유형 안에서는 지문 순서대로", () => {

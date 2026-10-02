@@ -309,7 +309,11 @@
     fix: "어법 오류를 찾아 고치는 서술형 문제. passage에서 8곳에 <u>(a)단어</u> … <u>(h)단어</u> 형식으로 기호와 밑줄을 넣고, 그중 3곳만 어법상 틀리게 바꾼다(나머지는 원문 그대로). choices는 null. answer는 '(b) is → are, (e) using → used, (g) which → where' 형식."
   };
 
-  function buildPrompt(passage, typeKey, count) {
+  // 어법·어휘처럼 번호가 지문 속에 박히는 유형은 나중에 정답을 옮길 수 없어, 만들 때 정답 번호를 정해 준다.
+  var FIXED_ANSWER_TYPES = { grammar: true, vocab: true };
+
+  // targets: 문제마다 원하는 정답 번호(0~4) 목록. 어법·어휘에만 쓴다.
+  function buildPrompt(passage, typeKey, count, targets) {
     var t = TYPE_BY_KEY[typeKey];
     if (!t || t.mode !== "ai") throw new Error("AI 유형이 아닙니다: " + typeKey);
     return [
@@ -321,6 +325,7 @@
       "",
       "## 공통 규칙",
       "- 기본 발문: " + t.instruction,
+      targets && targets.length ? "- 정답 번호는 문제 순서대로 " + targets.map(function (x) { return CIRCLED[x]; }).join(", ") + "가 되게 만드세요." : "",
       "- 여러 문제를 만들 때는 문제마다 선지·밑줄 위치·정답 번호가 서로 달라야 합니다.",
       "- 객관식 정답은 ①~⑤ 중 하나로 쓰고, 여러 문제의 정답 번호가 한쪽으로 몰리지 않게 합니다.",
       "- 밑줄은 <u>…</u>, 굵은 글씨는 <b>…</b> 태그만 씁니다. 다른 태그나 마크다운은 쓰지 않습니다.",
@@ -337,7 +342,8 @@
   }
 
   // 여러 지문과 여러 유형을 한 번에 요청하는 요청문 (Claude 채팅에 붙여 넣는 용도)
-  function buildCombinedPrompt(passages, requests) {
+  // plan: {유형: {지문 번호: [정답 번호(0~4)…]}} — 어법·어휘의 정답 번호 지정
+  function buildCombinedPrompt(passages, requests, plan) {
     var parts = requests.map(function (r) {
       var t = TYPE_BY_KEY[r.type];
       return "### " + t.name + " (지문마다 " + r.count + "문제, type 값: \"" + r.type + "\")\n- 기본 발문: " + t.instruction + "\n- " + AI_SPECS[r.type];
@@ -357,6 +363,7 @@
       "- 객관식 정답은 ①~⑤ 중 하나로 쓰고, 정답 번호가 한쪽으로 몰리지 않게 합니다.",
       "- 밑줄은 <u>…</u>, 굵은 글씨는 <b>…</b> 태그만 씁니다. 다른 태그나 마크다운은 쓰지 않습니다.",
       "- 문단을 나눌 때는 \\n 을 씁니다. explanation은 한국어 1~2문장.",
+      planLines(passages, requests, plan),
       "",
       "## 출력 형식",
       "설명 없이 JSON만 출력합니다. 각 문제에 type 값과, 어느 지문으로 만들었는지 src 값(지문 [ ] 안의 번호)을 반드시 넣습니다.",
@@ -365,6 +372,20 @@
       "## 지문",
       texts.join("\n\n")
     ].join("\n");
+  }
+
+  function planLines(passages, requests, plan) {
+    if (!plan) return "";
+    var lines = [];
+    requests.forEach(function (r) {
+      if (!plan[r.type]) return;
+      passages.forEach(function (p, i) {
+        var id = p.no || String(i + 1);
+        var want = plan[r.type][id];
+        if (want && want.length) lines.push("- 지문 [" + id + "] " + TYPE_BY_KEY[r.type].name + ": 정답 번호를 문제 순서대로 " + want.map(function (x) { return CIRCLED[x]; }).join(", ") + "로 만드세요.");
+      });
+    });
+    return lines.length ? "- 아래 정답 번호를 지켜 주세요.\n" + lines.join("\n") : "";
   }
 
   // ---------- 지문 여러 개 한꺼번에 등록 ----------
@@ -554,37 +575,48 @@
   }
 
   // 문제지 전체에서 정답 번호가 ①~⑤ 골고루 나오도록 맞춘다. problems는 문제지 순서대로.
-  // shouldMove(p)가 참인 문제만 옮기고, 나머지는 있는 그대로 개수에 넣는다.
-  // 고르는 기준(작을수록 좋음): 같은 지문(같은 회차)에 이미 있는 번호는 크게 피하고, 그다음 지금까지 덜 나온 번호, 앞뒤 문제와 다른 번호를 고른다.
+  // shouldMove(p)가 참인 문제만 옮기고(없으면 옮길 수 있는 문제 전부), 나머지는 있는 그대로 둔다.
+  // 고르는 기준(점수가 작은 번호를 고름):
+  //   1. 바로 앞·뒤 문제와 같은 번호는 피한다(다른 번호를 고를 수 없을 때만 허용).
+  //   2. 문제지 전체에서 덜 나온 번호를 고른다(뒤에 남은 고정 문제의 정답까지 셈).
+  //   3. 두 문제 앞, 같은 지문·같은 회차와 같은 번호는 조금 피하고, 나머지는 무작위로 섞는다.
   function balanceAnswers(problems, shouldMove, rng) {
     rng = rng || makeRng();
-    var counts = [0, 0, 0, 0, 0];
-    var bySource = {};
-    function note(p) {
-      var a = CIRCLED.indexOf(p.answer);
-      if (a < 0) return;
-      counts[a]++;
-      var k = sourceKey(p);
-      if (k) (bySource[k] = bySource[k] || {})[a] = true;
-    }
-    var movable = [];
-    problems.forEach(function (p) {
-      if (shouldMove && !shouldMove(p)) note(p);
-      else if (answerOptions(p).length > 1) movable.push(p);
-      else note(p);
+    var n = problems.length;
+    var options = problems.map(function (p) {
+      var o = answerOptions(p);
+      return o.length > 1 && (!shouldMove || shouldMove(p)) ? o : null;
     });
+    var counts = [0, 0, 0, 0, 0], future = [0, 0, 0, 0, 0];
+    problems.forEach(function (p, i) { var a = CIRCLED.indexOf(p.answer); if (!options[i] && a >= 0) future[a]++; });
+    var bySource = {};
+    var answers = [];
     problems.forEach(function (p, i) {
-      if (movable.indexOf(p) < 0) return;
-      var prev = i > 0 ? CIRCLED.indexOf(problems[i - 1].answer) : -1;
-      var next = i < problems.length - 1 && movable.indexOf(problems[i + 1]) < 0 ? CIRCLED.indexOf(problems[i + 1].answer) : -1;
-      var same = bySource[sourceKey(p)] || {};
-      var best = null, bestScore = Infinity;
-      answerOptions(p).forEach(function (t) {
-        var score = counts[t] * 100 + (same[t] ? 150 : 0) + (t === prev || t === next ? 5 : 0) + rng.next();
-        if (score < bestScore) { bestScore = score; best = t; }
-      });
-      moveAnswer(p, best);
-      note(p);
+      var a = CIRCLED.indexOf(p.answer);
+      if (!options[i]) {
+        if (a >= 0) future[a]--;
+      } else {
+        var prev = i > 0 ? answers[i - 1] : -1;
+        var prev2 = i > 1 ? answers[i - 2] : -1;
+        var next = i < n - 1 && !options[i + 1] ? CIRCLED.indexOf(problems[i + 1].answer) : -1;
+        var same = bySource[sourceKey(p)] || {};
+        var total = counts.map(function (c, t) { return c + future[t]; });
+        var least = Math.min.apply(null, total);
+        var best = a, bestScore = Infinity;
+        options[i].forEach(function (t) {
+          var score = (t === prev || t === next ? 10000 : 0) + (total[t] - least) * 50 +
+            (t === prev2 ? 15 : 0) + (same[t] ? 20 : 0) + rng.next() * 40;
+          if (score < bestScore) { bestScore = score; best = t; }
+        });
+        moveAnswer(p, best);
+        a = best;
+      }
+      answers.push(a);
+      if (a >= 0) {
+        counts[a]++;
+        var k = sourceKey(p);
+        if (k) (bySource[k] = bySource[k] || {})[a] = true;
+      }
     });
     return counts;
   }
@@ -965,6 +997,7 @@
     makeArrange: makeArrange,
     AUTO_MAKERS: AUTO_MAKERS,
     buildPrompt: buildPrompt,
+    FIXED_ANSWER_TYPES: FIXED_ANSWER_TYPES,
     buildCombinedPrompt: buildCombinedPrompt,
     parseBulkPassages: parseBulkPassages,
     normalizeNo: normalizeNo,

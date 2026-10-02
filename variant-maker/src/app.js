@@ -493,11 +493,24 @@
     box.hidden = false;
   }
 
+  // 어법·어휘의 정답 번호를 미리 정한다. 유형마다 ①~⑤를 섞어 한 바퀴씩 쓰므로 전체에서 고르게 나온다.
+  function answerTargets(decks, type, count) {
+    if (!VM.FIXED_ANSWER_TYPES[type]) return null;
+    decks[type] = decks[type] || VM.answerDeck(VM.makeRng());
+    var out = [];
+    while (out.length < count) {
+      var x = decks[type]();
+      if (out.indexOf(x) < 0 || out.length >= 5) out.push(x);
+    }
+    return out;
+  }
+
   // 요청문에는 지문마다 1, 2, 3… 번호를 붙이고, 답변을 읽을 때 원래 교재·번호로 되돌린다.
   function renderPrompts(target, ai) {
     var box = $("prompts");
     box.textContent = "";
     var reqs = ai.map(function (a) { return { type: a.type, count: a.count }; });
+    var promptDecks = {};
     target.keyMap = {};
     var keyed = target.passages.map(function (p, i) {
       var key = String(i + 1);
@@ -506,7 +519,14 @@
     });
     for (var i = 0; i < keyed.length; i += PROMPT_PASSAGES) {
       var chunk = keyed.slice(i, i + PROMPT_PASSAGES);
-      var text = VM.buildCombinedPrompt(chunk, reqs);
+      var plan = {};
+      reqs.forEach(function (r) {
+        chunk.forEach(function (p) {
+          var want = answerTargets(promptDecks, r.type, r.count);
+          if (want) (plan[r.type] = plan[r.type] || {})[p.no] = want;
+        });
+      });
+      var text = VM.buildCombinedPrompt(chunk, reqs, plan);
       var row = document.createElement("div");
       row.className = "prompt-item";
       var b = document.createElement("button");
@@ -543,7 +563,7 @@
 
   // Claude 화면 안에서는 지문·유형별로 한 번씩 Claude에게 바로 요청한다.
   async function runAi(target, ai, prefix) {
-    var jobs = [];
+    var jobs = [], aiDecks = {};
     target.passages.forEach(function (p) { ai.forEach(function (a) { jobs.push({ p: p, a: a }); }); });
     var done = 0, failed = [];
     $("make").disabled = true;
@@ -553,7 +573,7 @@
       aborter = new AbortController();
       show($("status"), "", prefix.concat(["AI가 문제를 만드는 중이에요 (" + (i + 1) + "/" + jobs.length + ": " + (job.p.no ? job.p.no + "번 " : "") + job.a.name + "). 하나에 30초~1분쯤 걸려요."]).join(" "));
       try {
-        var data = await sampleFn.json(VM.buildPrompt(job.p.text, job.a.type, job.a.count), { signal: aborter.signal });
+        var data = await sampleFn.json(VM.buildPrompt(job.p.text, job.a.type, job.a.count, answerTargets(aiDecks, job.a.type, job.a.count)), { signal: aborter.signal });
         var res = VM.parseAiProblems(data, { type: job.a.type, exam: job.p.exam, no: job.p.no });
         res.problems.forEach(function (x) { x.type = job.a.type; x.source = srcOf(job.p.exam, job.p); });
         insertProblems(res.problems);
