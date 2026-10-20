@@ -23,6 +23,13 @@
     { key: "compose", name: "한글 문장 영작", mode: "ai", instruction: "다음 글의 밑줄 친 우리말 (A)를 <조건>에 맞게 영작하시오." }
   ];
 
+  // 유형 묶음 아이콘: ◆ 대의 파악, ■ 어법·어휘, ● 빈칸·요약, ▲ 글의 흐름, ★ 서술형 (한글 기본 글꼴에 있는 기호)
+  var TYPE_ICON = {
+    claim: "◆", gist: "◆", topic: "◆", title: "◆", implied: "◆",
+    grammar: "■", vocab: "■", blank: "●", summary: "●", order: "▲", insert: "▲",
+    fix: "★", arrange: "★", compose: "★"
+  };
+
   var TYPE_BY_KEY = {};
   TYPES.forEach(function (t, i) { t.order = i; TYPE_BY_KEY[t.key] = t; });
 
@@ -697,19 +704,33 @@
       if (byRound && r !== lastRound) { n = 0; lastRound = r; }
       nums.push(++n);
     });
+    // 유형 표시: "tag"(발문 끝 꼬리표), "section"(유형이 바뀌는 곳에 구간 제목), "both", "none"
+    var mark = opts.typeMark || "tag";
+    var showTag = mark === "tag" || mark === "both";
+    var showSection = mark === "section" || mark === "both";
     lastRound = null;
+    var lastType = null;
     doc.problems.forEach(function (p, i) {
+      var t = TYPE_BY_KEY[p.type];
       if (byRound && (p.round || 0) !== lastRound) {
         if (lastRound !== null) blocks.push({ kind: "pagebreak", runs: [] });
         lastRound = p.round || 0;
+        lastType = null;
         blocks.push({ kind: "roundTitle", runs: [plain((lastRound + 1) + "회차")] });
       }
+      if (showSection && t && p.type !== lastType) {
+        var end = i;
+        while (end + 1 < doc.problems.length && doc.problems[end + 1].type === p.type && (!byRound || (doc.problems[end + 1].round || 0) === (p.round || 0))) end++;
+        blocks.push({ kind: "typeHead", runs: [
+          plain(TYPE_ICON[p.type] + " " + t.name, "typeHead"),
+          plain("   " + (end > i ? nums[i] + "–" + nums[end] + "번" : nums[i] + "번"), "typeRange")
+        ] });
+      }
+      lastType = p.type;
       if (labels[i]) blocks.push({ kind: "src", runs: [plain(labels[i])] });
-      blocks.push({
-        kind: "ask",
-        first: !labels[i],
-        runs: [plain(String(nums[i]), "num"), { text: "", u: false, b: false, tab: true }].concat(parseRuns(p.instruction))
-      });
+      var askRuns = [plain(String(nums[i]), "num"), { text: "", u: false, b: false, tab: true }].concat(parseRuns(p.instruction));
+      if (showTag && t) askRuns.push(plain(" "), plain("\u00a0" + TYPE_ICON[p.type] + " " + t.name + "\u00a0", "tag"));
+      blocks.push({ kind: "ask", first: !labels[i] && !(showSection && blocks[blocks.length - 1].kind === "typeHead"), runs: askRuns });
       var boxBlocks = p.box ? String(p.box).split(/\n/).filter(function (l) { return l.trim(); }).map(function (l) { return { kind: "box", runs: parseRuns(l) }; }) : [];
       var paraBlocks = String(p.passage || "").split(/\n/).filter(function (l) { return l.trim(); }).map(function (l) { return { kind: "para", runs: parseRuns(l) }; });
       if (p.boxFirst) blocks.push.apply(blocks, boxBlocks.concat(paraBlocks));
@@ -750,11 +771,11 @@
 
   var KIND_CHAR = {
     eyebrow: "eyebrow", title: "title", nameLine: "name", src: "src", ask: "ask",
-    box: "body", para: "body", choice: "body", answerLine: "body", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle"
+    box: "body", para: "body", choice: "body", answerLine: "body", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead"
   };
   var KIND_PARA = {
     eyebrow: "eyebrow", title: "title", nameLine: "nameLine", src: "src", ask: "ask",
-    box: "box", para: "body", choice: "choice", answerLine: "answerLine", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle"
+    box: "box", para: "body", choice: "choice", answerLine: "answerLine", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead"
   };
 
   // 굵게·밑줄 조합이 있는 글자 모양이면 그것을, 없으면 가장 가까운 것을 쓴다.
@@ -896,7 +917,8 @@
   var DOCX_CHAR = {
     body: [BATANG, 10], ask: [DOTUM, 10, true], num: [BATANG, 13, true, NAVY], src: [DOTUM, 8, true, "6B7688"],
     title: [BATANG, 18, true], eyebrow: [DOTUM, 8.5, true, NAVY], name: [DOTUM, 9], hf: [DOTUM, 8, false, "555555"],
-    ansTitle: [BATANG, 14, true], ansNum: [BATANG, 9.5, true, NAVY], ans: [BATANG, 9.5], explain: [BATANG, 8.5, false, "444444"]
+    ansTitle: [BATANG, 14, true], ansNum: [BATANG, 9.5, true, NAVY], ans: [BATANG, 9.5], explain: [BATANG, 8.5, false, "444444"],
+    tag: [DOTUM, 8, true, NAVY, "E3EAF5"], typeHead: [DOTUM, 10.5, true, NAVY], typeRange: [DOTUM, 8, false, "6B7688"]
   };
 
   // 문단 모양 (단위: twip, 1mm ≈ 56.7)
@@ -914,6 +936,7 @@
     answerLine: '<w:spacing w:before="40"/><w:ind w:left="' + ASK_TWIP + '"/>',
     ansTitle: '<w:spacing w:after="100"/><w:jc w:val="center"/>',
     roundTitle: '<w:keepNext/><w:spacing w:after="100"/><w:jc w:val="center"/>',
+    typeHead: '<w:keepNext/><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="2" w:color="' + NAVY + '"/></w:pBdr><w:spacing w:before="280" w:after="60"/>',
     ans: '<w:spacing w:after="20" w:line="290" w:lineRule="auto"/><w:ind w:left="260" w:hanging="260"/>'
   };
 
@@ -924,6 +947,7 @@
     if (run.b || c[2]) props += "<w:b/>";
     if (c[3]) props += '<w:color w:val="' + c[3] + '"/>';
     props += '<w:sz w:val="' + Math.round(c[1] * 2) + '"/><w:szCs w:val="' + Math.round(c[1] * 2) + '"/>';
+    if (c[4]) props += '<w:shd w:val="clear" w:color="auto" w:fill="' + c[4] + '"/>';
     if (run.u) props += '<w:u w:val="single"/>';
     if (run.pageNum) return '<w:fldSimple w:instr="PAGE"><w:r><w:rPr>' + props + "</w:rPr><w:t>1</w:t></w:r></w:fldSimple>";
     return "<w:r><w:rPr>" + props + '</w:rPr><w:t xml:space="preserve">' + xmlEscape(run.text) + "</w:t></w:r>";
@@ -993,6 +1017,7 @@
     TYPES: TYPES,
     TYPE_BY_KEY: TYPE_BY_KEY,
     makeRng: makeRng,
+    TYPE_ICON: TYPE_ICON,
     answerDeck: answerDeck,
     answerOptions: answerOptions,
     moveAnswer: moveAnswer,

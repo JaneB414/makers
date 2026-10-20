@@ -20,6 +20,7 @@ GRAY = "#6B7688"
 FOOT_GRAY = "#555555"
 BOX_FILL = "#EEF2F8"
 RULE = "#C9D1DE"
+TAG_FILL = "#E3EAF5"
 
 # 본문 폭: A4(59528) - 좌우 여백 15mm(4252)씩
 BODY_WIDTH = 59528 - 4252 * 2
@@ -60,12 +61,14 @@ def main(wheel):
     next_char = int(re.search(r'<hh:charProperties itemCnt="(\d+)"', h).group(1))
     char_ids, char_items = {}, []
 
-    def char(name, pt, hangul, bold=False, underline=False, color="#000000", latin=None):
+    def char(name, pt, hangul, bold=False, underline=False, color="#000000", latin=None, shade=None):
         nonlocal next_char
         latin = tnr if latin is None else latin
         s = cp0.replace('id="0"', 'id="%d"' % next_char, 1)
         s = s.replace('height="1000"', 'height="%d"' % round(pt * 100), 1)
         s = s.replace('textColor="#000000"', 'textColor="%s"' % color, 1)
+        if shade:
+            s = s.replace('shadeColor="none"', 'shadeColor="%s"' % shade, 1)
         s = re.sub(r"<hh:fontRef [^>]*/>",
                    '<hh:fontRef hangul="%d" latin="%d" hanja="%d" japanese="%d" other="%d" symbol="%d" user="%d"/>'
                    % (hangul, latin, hangul, hangul, hangul, hangul, hangul), s, 1)
@@ -83,6 +86,9 @@ def main(wheel):
         char("ask" + suffix, 10, DOTUM, True, u)
     char("num", 13, BATANG, bold=True, color=NAVY)
     char("src", 8, DOTUM, bold=True, color=GRAY)
+    char("tag", 8, DOTUM, bold=True, color=NAVY, shade=TAG_FILL)  # 발문 끝 유형 꼬리표
+    char("typeHead", 10.5, DOTUM, bold=True, color=NAVY)          # 유형 구간 제목
+    char("typeRange", 8, DOTUM, color=GRAY)
     char("title", 18, BATANG, bold=True)
     char("eyebrow", 8.5, DOTUM, bold=True, color=NAVY)
     char("name", 9, DOTUM)
@@ -118,6 +124,7 @@ def main(wheel):
     border_fill("headRule", {"bottom": ("SOLID", "0.7 mm", NAVY)})
     border_fill("footRule", {"top": ("SOLID", "0.12 mm", NAVY)})
     border_fill("headerRule", {"bottom": ("SOLID", "0.12 mm", "#999999")})
+    border_fill("typeRule", {"bottom": ("SOLID", "0.25 mm", NAVY)})
     h = add_items(h, "borderFills", bf_items)
 
     # 탭: 발문 들여쓰기용(왼쪽 탭), 머리말·꼬리말용(가운데·오른쪽 탭)
@@ -180,6 +187,7 @@ def main(wheel):
     para("header", align="LEFT", line=120, border="headerRule", offsets=(0, 0, 0, 200), tab_id=tab_ids["hf"])
     para("footer", align="LEFT", line=120, border="footRule", offsets=(0, 0, 250, 0), tab_id=tab_ids["hf"])
     para("ansTitle", align="CENTER", after=500, line=130)
+    para("typeHead", align="LEFT", prev=1400, after=200, line=130, border="typeRule", offsets=(0, 0, 0, 150), keep_next=True)
     para("ans", align="LEFT", left=1300, indent=-1300, line=145, after=100)
     para("answerLine", align="LEFT", left=ASK_INDENT, prev=200, line=150)
     h = add_items(h, "paraProperties", para_items)

@@ -17,7 +17,7 @@
   var state = {
     problems: [], selection: {},
     layout: { title: "영어 변형문제", eyebrow: "ENGLISH · 변형문제", headerLeft: "", headerRight: "", footerLeft: "", footerRight: "", showName: true },
-    options: { columns: 2, answers: true, explanations: true, rounds: true }
+    options: { columns: 2, answers: true, explanations: true, rounds: true, typeMark: "tag" }
   };
   var lib = { exams: [], currentExam: null };
   var editing = null;        // 편집 중인 지문 id (null이면 새 지문)
@@ -678,9 +678,12 @@
       if (HEAD_KINDS[bl.kind]) return;
       if (bl.kind === "pagebreak") { out.push({ pagebreak: true }); cur = null; return; }
       var prevKind = blocks[i - 1] && blocks[i - 1].kind;
-      var starts = bl.kind === "ansTitle" || bl.kind === "roundTitle" ||
-        (bl.kind === "src" && prevKind !== "roundTitle") ||
-        (bl.kind === "ask" && prevKind !== "src" && prevKind !== "roundTitle") ||
+      // 회차 제목·유형 구간 제목은 바로 뒤 문제와 한 묶음으로 둔다.
+      var afterHead = prevKind === "roundTitle" || prevKind === "typeHead";
+      var starts = bl.kind === "ansTitle" ||
+        ((bl.kind === "roundTitle" || bl.kind === "typeHead") && !afterHead) ||
+        (bl.kind === "src" && !afterHead) ||
+        (bl.kind === "ask" && prevKind !== "src" && !afterHead) ||
         (bl.kind === "ans" && prevKind !== "ansTitle");
       if (starts || !cur) {
         cur = { blocks: [], problem: null };
@@ -754,7 +757,7 @@
       if (u.pagebreak) { newPage(); return; }
       var els = u.blocks.map(function (x) { return blockEl(x.bl, x.prev, x.next); });
       if (u.problem !== null) {
-        var host = els[u.blocks[0].bl.kind === "roundTitle" ? 1 : 0];
+        var host = els[u.blocks.findIndex(function (x) { return x.bl.kind === "src" || x.bl.kind === "ask"; })];
         host.style.position = "relative";
         host.appendChild(problemTools(u.problem));
       }
@@ -926,6 +929,8 @@
     $("opt-answers").checked = state.options.answers !== false;
     $("opt-expl").checked = state.options.explanations !== false;
     $("opt-rounds").checked = !!state.options.rounds;
+    $("opt-typemark").value = state.options.typeMark || "tag";
+    $("opt-typemark").addEventListener("change", function () { state.options.typeMark = $("opt-typemark").value; saveState(); renderPages(); });
     $("opt-rounds").addEventListener("change", function () { state.options.rounds = $("opt-rounds").checked; saveState(); renderPages(); });
     $("opt-name").addEventListener("change", function () { state.layout.showName = $("opt-name").checked; saveState(); renderPages(); });
     $("opt-cols").addEventListener("change", function () { state.options.columns = $("opt-cols").checked ? 2 : 1; saveState(); renderPages(); });

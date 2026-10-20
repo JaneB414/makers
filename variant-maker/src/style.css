@@ -21,6 +21,7 @@
   --src-gray: #6b7688;
   --box-fill: #eef2f8;
   --col-rule: #c9d1de;
+  --tag-fill: #e3eaf5;
   --foot-gray: #555555;
   --en: "Times New Roman", Times, "Liberation Serif", "Nimbus Roman", serif;
   --kr-serif: "Noto Serif KR", "함초롬바탕", "HCR Batang", "Batang", serif;
@@ -154,6 +155,10 @@ details .sub { display: grid; gap: 8px; margin-top: 8px; }
 .page .k-answerLine { margin: 6px 0 0 27px; }
 .page .k-ansTitle { font: 700 18.67px/1.4 var(--en), var(--kr-serif); text-align: center; margin-bottom: 10px; }
 .page .k-roundTitle { font: 700 18.67px/1.4 var(--en), var(--kr-serif); text-align: center; color: var(--navy); margin: 4px 0 2px; }
+.page .k-typeHead { font: 700 14px/1.4 var(--kr-sans); color: var(--navy); border-bottom: 1.3px solid var(--navy); padding-bottom: 3px; margin: 22px 0 8px; display: flex; align-items: baseline; gap: 10px; }
+.page .k-typeHead:first-child { margin-top: 2px; }
+.page .r-typeRange { font: 400 10.67px var(--kr-sans); color: var(--src-gray); letter-spacing: .02em; }
+.page .r-tag { display: inline-block; font: 700 10.67px/1.5 var(--kr-sans); color: var(--navy); background: var(--tag-fill); padding: 0 2px; margin-left: 2px; border-radius: 2px; white-space: nowrap; vertical-align: 1px; }
 .page .k-ans { font-size: 12.67px; line-height: 1.5; padding-left: 1.8em; text-indent: -1.8em; margin-bottom: 2px; }
 .page .r-ansNum { color: var(--navy); font-weight: 700; }
 .page .r-explain { color: #444; font-size: 11.33px; }
@@ -168,3 +173,4 @@ details .sub { display: grid; gap: 8px; margin-top: 8px; }
 .coverage .cov-row.done b { color: var(--ok); }
 .coverage .cov-row.miss b { color: var(--warn); }
 .coverage .cov-row span { color: var(--muted); }
+.inline-select { width: auto; padding: 2px 6px; font-size: 13px; }

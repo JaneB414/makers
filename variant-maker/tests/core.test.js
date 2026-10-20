@@ -186,6 +186,18 @@ test("회차별로 나누기: 회차 제목, 새 쪽, 번호를 1부터 다시",
   assert.deepStrictEqual(ans, ["[1회차]", "1)", "2)", "[2회차]", "1)", "2)"]);
 });
 
+test("유형 표시: 꼬리표는 발문 끝에, 구간 제목은 유형이 바뀌는 곳에 번호 범위와 함께", () => {
+  const mk = (type) => ({ type, instruction: "q", passage: "p", choices: null, answer: "①", source: null });
+  const problems = [mk("claim"), mk("claim"), mk("order")];
+  const text = (b) => b.runs.map((r) => r.text).join("");
+  const tag = VM.buildBlocks({ title: "t", problems, options: { answers: false } });
+  assert.ok(text(tag.filter((b) => b.kind === "ask")[0]).endsWith("\u00a0◆ 주장\u00a0"), "기본은 꼬리표");
+  const sec = VM.buildBlocks({ title: "t", problems, options: { answers: false, typeMark: "section" } });
+  assert.deepStrictEqual(sec.filter((b) => b.kind === "typeHead").map(text), ["◆ 주장   1–2번", "▲ 순서   3번"]);
+  const none = VM.buildBlocks({ title: "t", problems, options: { answers: false, typeMark: "none" } });
+  assert.ok(!none.some((b) => b.kind === "typeHead") && !text(none.filter((b) => b.kind === "ask")[0]).includes("주장"));
+});
+
 test("정답지에는 정답과 해설만 나온다", () => {
   const blocks = VM.buildBlocks({ title: "t", problems: [{ type: "title", instruction: "q", passage: "p", choices: null, answer: "③", explanation: "해설", source: { exam: "E", no: "29" } }], options: { answers: true, explanations: true } });
   const ans = blocks.filter((b) => b.kind === "ans")[0].runs.map((r) => r.text).join("");
