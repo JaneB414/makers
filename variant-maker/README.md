@@ -106,6 +106,7 @@ node --test variant-maker/tests/core.test.js   # 테스트
 
 - `src/core.js`: 문장 나누기, 자동 유형 생성, AI 요청문과 답변 읽기, HWPX·DOCX 만들기 (화면과 무관한 로직)
 - `src/app.js`: 화면 동작
+- `core.js`·`style.css`·`hwpx-template.js`는 [워크북 메이커](../workbook-maker/)도 함께 씁니다. 고친 뒤에는 `python workbook-maker/build.py`도 실행하세요.
 - `src/hwpx-template.js`: HWPX 빈 문서 틀. [python-hwpx](https://github.com/airmang/python-hwpx)(Apache-2.0)의 `Skeleton.hwpx`에 글자·문단 모양(굵게, 밑줄, 상자 등)을 추가한 것입니다. 라이선스는 `template/python-hwpx-LICENSE`에 있습니다.
 - `tools/make_hwpx_template.py`: `hwpx-template.js`를 다시 만드는 스크립트
 - PDF 저장에는 [html2canvas](https://html2canvas.hertzen.com/) 1.4.1(MIT)과 [jsPDF](https://github.com/parallax/jsPDF) 2.5.1(MIT)을 cdnjs에서 불러와 씁니다.

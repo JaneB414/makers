@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>영어 워크북 메이커</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;700&display=swap">
+<link rel="stylesheet" href="../../variant-maker/src/style.css">
+<link rel="stylesheet" href="wb.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>영어 워크북 메이커</h1>
+    <p>지문을 골라 어휘·해석·어법·빈칸·배열·영작 활동이 담긴 워크북을 만들어 한글·PDF 파일로 저장합니다.</p>
+  </header>
+
+  <div class="layout">
+    <div class="stack">
+      <section class="panel" aria-labelledby="h-lib">
+        <h2 id="h-lib"><span class="step">1</span>지문 보관함</h2>
+        <p class="hint">교재별로 지문을 등록해 두는 곳이에요. 같은 브라우저에서 파일로 열면 변형문제 메이커와 같은 보관함을 함께 써요.</p>
+
+        <div class="row">
+          <label class="field grow" for="exam">교재
+            <select id="exam"></select>
+          </label>
+          <button type="button" id="exam-new">새 교재</button>
+          <button type="button" id="exam-rename">이름 바꾸기</button>
+          <button type="button" id="exam-delete">삭제</button>
+        </div>
+        <div class="row" id="exam-form" hidden>
+          <label class="field grow" for="exam-name"><span id="exam-form-label">새 교재 이름</span>
+            <input type="text" id="exam-name" placeholder="예: 26년 9월 고2 모의고사, 수능특강 영어">
+          </label>
+          <button type="button" class="primary" id="exam-save">확인</button>
+          <button type="button" id="exam-cancel">취소</button>
+        </div>
+        <div class="msg warn" id="exam-confirm" hidden>
+          <span id="exam-confirm-text"></span>
+          <button type="button" id="exam-confirm-yes">삭제</button>
+          <button type="button" id="exam-confirm-no">취소</button>
+        </div>
+
+        <div class="chips" id="chips"></div>
+        <p class="hint" id="chips-count"></p>
+
+        <div class="editor">
+          <div class="row">
+            <label class="field" for="p-no" style="width:120px">지문 번호
+              <input type="text" id="p-no" placeholder="29, 3강 1번">
+            </label>
+            <div class="row end">
+              <button type="button" class="primary" id="p-save">지문 저장</button>
+              <button type="button" id="p-new">새 지문</button>
+              <button type="button" id="p-delete">지문 삭제</button>
+            </div>
+          </div>
+          <label class="field" for="passage">영어 지문
+            <textarea id="passage" rows="7" spellcheck="false"></textarea>
+          </label>
+          <label class="check"><input type="checkbox" id="by-line"> 한 줄에 한 문장씩 나눠 넣었어요</label>
+          <details>
+            <summary id="sent-summary">문장 나누기 확인</summary>
+            <ol class="sentences" id="sentences"></ol>
+            <p class="hint">문장이 잘못 나뉘었으면 지문을 한 줄에 한 문장씩 적고 위 칸을 체크하세요.</p>
+          </details>
+        </div>
+        <div id="lib-status" class="msg" hidden></div>
+
+        <details>
+          <summary>여러 지문 한꺼번에 등록</summary>
+          <div class="sub">
+            <p class="hint">지문마다 번호 줄을 먼저 쓰고 그 아래에 지문을 붙여 넣으세요. 번호 줄은 <code>[18]</code>, <code>18번</code>, <code>[3강 1번]</code>처럼 씁니다. 같은 번호가 이미 있으면 새 지문으로 바꿔요.</p>
+            <textarea id="bulk" rows="6" spellcheck="false" placeholder="[18]&#10;Dear Ms. Carter, ...&#10;&#10;[19]&#10;The morning sun ..."></textarea>
+            <div class="row"><button type="button" id="bulk-add">지금 교재에 등록</button></div>
+          </div>
+        </details>
+        <details>
+          <summary>보관함 백업</summary>
+          <div class="sub">
+            <p class="hint">보관함은 이 브라우저에만 저장돼요. 변형문제 메이커에서 저장한 보관함 파일도 그대로 불러올 수 있어요.</p>
+            <div class="row">
+              <button type="button" id="lib-export">보관함 파일로 저장</button>
+              <label class="button" for="lib-import">보관함 파일 불러오기</label>
+              <input type="file" id="lib-import" accept=".json,application/json" hidden>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <section class="panel" aria-labelledby="h-pick">
+        <h2 id="h-pick"><span class="step">2</span>워크북에 넣을 지문 고르기</h2>
+        <p class="hint">보관함의 모든 교재에서 원하는 지문을 골라요. 여러 교재의 지문을 섞어도 돼요.</p>
+        <div class="picker" id="picker"></div>
+        <div class="row between">
+          <span class="hint" id="pick-count"></span>
+          <button type="button" class="link" id="pick-none">모두 해제</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="h-types">
+        <h2 id="h-types"><span class="step">3</span>활동 고르기</h2>
+        <p class="hint"><span class="tag auto">자동</span> 무료로 바로 만들어요. <span class="tag ai">AI</span> Claude가 지문마다 해석·어휘·어법 자료를 한 번 만들어 두고, 다시 만들 때는 그대로 써요.</p>
+        <div class="types wb-types" id="types"></div>
+        <div class="row">
+          <button type="button" class="link" id="select-auto">자동 활동만</button>
+          <button type="button" class="link" id="select-all">모두 고르기</button>
+          <button type="button" class="link" id="select-none">모두 해제</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="h-make">
+        <h2 id="h-make"><span class="step">4</span>만들기</h2>
+        <div class="row">
+          <button type="button" class="primary" id="make">워크북 만들기</button>
+          <button type="button" id="stop" hidden>멈추기</button>
+        </div>
+        <p class="hint">다시 누르면 빈칸 위치, 섞는 순서가 새로 바뀐 워크북을 만들어요. AI 자료는 이미 만든 것을 그대로 써요.</p>
+        <p class="hint" id="make-target"></p>
+        <div id="status" class="msg" hidden></div>
+
+        <div id="manual" class="ai-out" hidden>
+          <p class="hint" id="manual-intro">AI 활동에 필요한 자료는 Claude 채팅에서 만들어요. ① 요청문을 복사해 <a href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai</a>에 붙여 넣고 ② Claude의 답변 전체를 복사해 아래 칸에 붙여 넣은 뒤 ③ 불러오기를 누르세요. 요청문이 여러 개면 답변을 이어 붙여도 돼요.</p>
+          <div id="prompts" class="prompts"></div>
+          <label class="field" for="ai-in">② Claude의 답변 붙여넣기
+            <textarea id="ai-in" class="mono" rows="6" placeholder='{"passages":[ ... ]}'></textarea>
+          </label>
+          <div class="row"><button type="button" class="primary" id="load-ai">③ 불러오기</button></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="stack" aria-labelledby="h-sheet">
+      <div class="panel">
+        <div class="sheet-bar">
+          <h2 id="h-sheet">워크북 <span class="hint" id="count">0개 활동</span></h2>
+          <div class="row">
+            <button type="button" id="save-hwpx" class="primary">한글 파일 저장</button>
+            <button type="button" id="save-pdf">PDF 저장</button>
+            <button type="button" id="clear">모두 지우기</button>
+          </div>
+        </div>
+        <p class="hint" id="save-hint"></p>
+        <div id="save-status" class="msg" hidden></div>
+        <div id="confirm-clear" class="msg warn" hidden>
+          워크북을 모두 지울까요? 지문 보관함과 AI 자료는 그대로 남아요.
+          <button type="button" id="clear-yes">지우기</button>
+          <button type="button" id="clear-no">취소</button>
+        </div>
+
+        <details id="layout-box">
+          <summary>워크북 꾸미기 (제목·머리말·꼬리말)</summary>
+          <div class="sub grid2">
+            <label class="field" for="title">제목
+              <input type="text" id="title" value="영어 워크북">
+            </label>
+            <label class="field" for="eyebrow">제목 위 작은 글
+              <input type="text" id="eyebrow" placeholder="예: ENGLISH · WORKBOOK">
+            </label>
+            <label class="field" for="header-left">머리말 왼쪽
+              <input type="text" id="header-left" placeholder="예: 행복영어학원">
+            </label>
+            <label class="field" for="header-right">머리말 오른쪽
+              <input type="text" id="header-right" placeholder="예: 고2 영어">
+            </label>
+            <label class="field" for="footer-left">꼬리말 왼쪽
+              <input type="text" id="footer-left" placeholder="예: 김OO 선생님">
+            </label>
+            <label class="field" for="footer-right">꼬리말 오른쪽
+              <input type="text" id="footer-right" placeholder="예: cafe.naver.com/…">
+            </label>
+          </div>
+          <p class="hint">쪽 번호는 꼬리말 가운데에 자동으로 들어가요.</p>
+        </details>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="opt-name" checked> 반·번호·이름 칸</label>
+          <label class="check"><input type="checkbox" id="opt-cols"> 2단 편집</label>
+          <label class="check"><input type="checkbox" id="opt-answers" checked> 정답지 붙이기</label>
+          <label class="check"><input type="checkbox" id="opt-newpage" checked> 묶음마다 새 쪽</label>
+          <label class="check" for="opt-group">묶는 방식
+            <select id="opt-group" class="inline-select">
+              <option value="passage">지문별 (지문 → 활동)</option>
+              <option value="type">활동별 (활동 → 지문)</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="pages-scroll" id="pages-scroll"><div class="pages" id="pages"></div></div>
+    </section>
+  </div>
+</div>
+
+<script src="../../variant-maker/src/hwpx-template.js"></script>
+<script src="../../variant-maker/src/core.js"></script>
+<script src="wb-core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

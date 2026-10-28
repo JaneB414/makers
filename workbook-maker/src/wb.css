@@ -1,0 +1,13 @@
+/* 워크북 메이커에만 쓰는 모양. 기본 화면·쪽 모양은 variant-maker/src/style.css를 함께 쓴다. */
+.wb-types .type { grid-template-columns: auto minmax(0, 1fr); }
+.wb-types .type .desc { grid-column: 2; font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+/* 워크북 쪽 */
+.page .k-answerLine { white-space: nowrap; overflow: hidden; }
+.page .k-answerLine .r-explain { white-space: normal; }
+.page .k-answerLine:has(.r-explain) { white-space: normal; margin-top: 1px; margin-bottom: 5px; }
+.page .k-choice + .k-answerLine { margin-top: 2px; }
+.page .answer-table.wb-table td { height: 26px; padding: 3px 4px; font: 12.67px/1.4 var(--en), var(--kr-serif); }
+.page .answer-table.wb-table th { width: auto; }
+.page .answer-table.wb-table th:first-child { width: auto; }
+.page .k-gridCaption + .k-ans { margin-top: 2px; }
