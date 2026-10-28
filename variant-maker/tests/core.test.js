@@ -309,6 +309,21 @@ test("어법 오류 고치기: 지문 전체 + (A)~(E) 한 문장씩, 2문장만
   assert.ok(hw.includes('rowCnt="3" colCnt="3"') && hw.includes("<hp:t>어법상 맞는 형태 (1단어)</hp:t>"));
 });
 
+test("어법 수준: 출제 지침이 요청문에 들어가고, 조동사 뒤 동사원형 같은 뻔한 포인트는 점검에서 잡는다", () => {
+  const g = VM.buildPrompt(PASSAGE, "grammar", 1);
+  assert.ok(g.includes("어법 출제 수준") && g.includes("가목적어") && g.includes("부정어") && g.includes("쓰지 말 것"));
+  assert.ok(VM.buildPrompt(PASSAGE, "fix", 1).includes("어법 출제 수준"));
+  assert.ok(!VM.buildPrompt(PASSAGE, "title", 1).includes("어법 출제 수준"));
+  assert.ok(VM.buildCombinedPrompt([{ no: "1", text: "a" }], [{ type: "title", count: 1 }, { type: "grammar", count: 1 }]).includes("어법 출제 수준"));
+  assert.ok(VM.buildReviewPrompt([{ id: "r1", problem: { type: "grammar", instruction: "q", passage: "p", choices: null, answer: "①" } }]).includes("너무 쉬운 포인트"));
+  const easy = { type: "grammar", passage: "Most ideas <u>①are</u> ordinary and <u>②few</u> will <u>③being</u> good, <u>④which</u> is <u>⑤surprising</u>.", choices: null, answer: "③" };
+  assert.ok(VM.checkProblem(easy).some((x) => x.includes("너무 쉬운 포인트")));
+  const hard = Object.assign({}, easy, { answer: "④" });
+  assert.ok(!VM.checkProblem(hard).some((x) => x.includes("너무 쉬운 포인트")));
+  const fixEasy = { type: "fix", passage: "<u>(A) Most of the early ideas will being ordinary.</u> <u>(B) It is fine.</u> <u>(C) It is.</u> <u>(D) Who knows.</u> <u>(E) So are we.</u>", choices: null, answer: "(A) being → be, (B) fine → fines" };
+  assert.ok(VM.checkProblem(fixEasy).some((x) => x.includes("(A) 'being'는 조동사 바로 뒤")));
+});
+
 test("정답지에는 정답과 해설만 나온다", () => {
   const blocks = VM.buildBlocks({ title: "t", problems: [{ type: "title", instruction: "q", passage: "p", choices: null, answer: "③", explanation: "해설", source: { exam: "E", no: "29" } }], options: { answers: true, explanations: true } });
   const ans = blocks.filter((b) => b.kind === "ans")[0].runs.map((r) => r.text).join("");

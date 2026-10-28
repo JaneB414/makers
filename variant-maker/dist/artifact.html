@@ -780,20 +780,41 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     gist: "글의 요지를 묻는 문제. choices는 한국어 평서문 5개. 오답은 부분 정보, 과도한 일반화, 반대 내용, 글에 없는 내용으로 만든다. passage는 원문 그대로.",
     topic: "글의 주제를 묻는 문제. choices는 영어 명사구 5개(소문자로 시작, 마침표 없음, 예: 'effects of social media on self-esteem'). 오답은 너무 넓거나 좁거나, 글의 세부 사항이거나, 반대 방향인 것. passage는 원문 그대로.",
     title: "글의 제목을 묻는 문제. choices는 영어 제목 5개(주요 단어 첫 글자 대문자, 의문문·감탄문·콜론 형식도 가능). 정답은 요지를 비유적으로 표현해도 좋다. passage는 원문 그대로.",
-    grammar: "어법상 틀린 것을 고르는 문제. passage에서 서로 다른 어법 포인트(수일치, 시제, 분사, 관계사, 동명사/to부정사, 병렬, 대명사, 태, 형용사/부사 등) 5곳에 <u>①단어</u>, <u>②단어</u> … <u>⑤단어</u> 형식으로 번호와 밑줄을 넣는다. 그중 정확히 1곳만 어법상 틀리게 바꾸고, 나머지 4곳과 나머지 지문은 원문 그대로 둔다. choices는 null. explanation에 틀린 곳과 올바른 형태, 이유를 쓴다.",
-    vocab: "문맥상 낱말 쓰임이 적절하지 않은 것을 고르는 문제. passage에서 내용어 5곳에 <u>①단어</u> … <u>⑤단어</u> 형식으로 번호와 밑줄을 넣는다. 그중 정확히 1곳만 문맥과 반대되거나 어울리지 않는 낱말(주로 반의어)로 바꾸고 나머지는 원문 그대로 둔다. choices는 null. explanation에 원래 낱말을 쓴다.",
+    grammar: "어법상 틀린 것을 고르는 문제. passage에서 서로 다른 고난도 어법 포인트 5곳에 <u>①단어 또는 짧은 구</u>, <u>②…</u> … <u>⑤…</u> 형식으로 번호와 밑줄을 넣는다(아래 '어법 출제 수준'을 따른다). 그중 정확히 1곳만 어법상 틀리게 바꾸고, 나머지 4곳과 나머지 지문은 원문 그대로 둔다. choices는 null. explanation에 다섯 밑줄 각각의 출제 포인트를 짧게 쓰고, 틀린 곳은 올바른 형태와 그 이유를 문장 구조로 설명한다.",    vocab: "문맥상 낱말 쓰임이 적절하지 않은 것을 고르는 문제. passage에서 내용어 5곳에 <u>①단어</u> … <u>⑤단어</u> 형식으로 번호와 밑줄을 넣는다. 그중 정확히 1곳만 문맥과 반대되거나 어울리지 않는 낱말(주로 반의어)로 바꾸고 나머지는 원문 그대로 둔다. choices는 null. explanation에 원래 낱말을 쓴다.",
     implied: "밑줄 친 함축적 의미를 묻는 문제. passage에서 비유적이거나 함축적인 표현 하나에 <u>…</u> 밑줄을 넣는다(나머지는 원문 그대로). instruction은 '밑줄 친 <표현>이 다음 글에서 의미하는 바로 가장 적절한 것은?'처럼 그 표현을 넣어 쓴다. choices는 영어 5개(문장 또는 구).",
     blank: "빈칸 추론 문제. passage에서 글의 핵심을 담은 단어·구·절 하나를 ________________ 로 바꾼다(나머지는 원문 그대로). choices는 영어 5개이며 정답은 원문 표현이나 같은 뜻의 바꿔 쓴 표현. 오답은 그럴듯하지만 글의 논리와 맞지 않게 만든다.",
     summary: "요약문 완성 문제. passage는 원문 그대로. box에 글 전체를 요약한 영어 한 문장을 쓰고, 핵심어 두 곳을 (A) ________ 와 (B) ________ 로 비운다. boxFirst는 false. choices는 5개이며 각 항목은 '(A)에 들어갈 말 …… (B)에 들어갈 말' 형식(예: 'flexible …… reduced'). 정답 단어는 본문에 그대로 나오지 않는 바꿔 쓴 말이 좋다.",
     compose: "우리말 영작 문제. passage에서 한 문장(또는 절)을 골라 그 자리를 '(A) <u>그 문장의 자연스러운 한국어 번역</u>'으로 바꾼다. box에는 '<조건>'으로 시작하는 조건 2~3줄(예: 주어진 단어 사용, 단어 수, 필수 어법)을 줄바꿈(\\n)으로 나눠 쓴다. boxFirst는 false. choices는 null. answer는 원문 영어 문장.",
     summaryWrite: "요약문 빈칸 서술형 문제. passage는 원문 그대로. box에 글 전체 내용을 요약한 영어 한 문장(또는 두 문장)을 쓰고, 핵심 단어 세 곳을 (A) ________, (B) ________, (C) ________ 로 비운다. 세 빈칸의 정답은 모두 본문(passage)에 그대로 나오는 한 단어여야 하며(형태를 바꾸지 않음), 각 빈칸에 들어갈 수 있는 본문 단어는 하나뿐이어야 한다. boxFirst는 false. choices는 null. answer는 '(A) practice (B) quality (C) effort' 형식.",
-    fix: "어법 오류를 찾아 고치는 서술형 문제. passage에는 지문 전체를 빠짐없이 원문 순서대로 싣는다(문장을 빼거나 줄이지 않음). 그중 서로 다른 다섯 문장을 골라 각 문장 전체에 <u>(A) 문장 전체</u>, <u>(B) 문장 전체</u> … <u>(E) 문장 전체</u> 형식으로 기호와 밑줄을 넣는다(한 기호 = 한 문장, 문장 일부만 밑줄 긋지 않음). 다섯 문장 중 정확히 2문장에만 어법상 틀린 단어를 한 개씩 넣고, 나머지 3문장과 밑줄 없는 문장은 원문 그대로 둔다. 틀린 부분과 고친 형태는 각각 한 단어여야 한다. box는 null(조건은 프로그램이 넣음). choices는 null. answer는 '(B) is → are, (D) using → used' 형식(알파벳 순서대로).",
+    fix: "어법 오류를 찾아 고치는 서술형 문제. passage에는 지문 전체를 빠짐없이 원문 순서대로 싣는다(문장을 빼거나 줄이지 않음). 그중 서로 다른 다섯 문장을 골라 각 문장 전체에 <u>(A) 문장 전체</u>, <u>(B) 문장 전체</u> … <u>(E) 문장 전체</u> 형식으로 기호와 밑줄을 넣는다(한 기호 = 한 문장, 문장 일부만 밑줄 긋지 않음). 다섯 문장 중 정확히 2문장에만 어법상 틀린 단어를 한 개씩 넣고, 나머지 3문장과 밑줄 없는 문장은 원문 그대로 둔다. 틀린 곳과 옳은 문장 모두 아래 '어법 출제 수준'의 고난도 포인트를 담은 문장으로 고른다. explanation에는 틀린 두 곳의 출제 포인트와 이유를 문장 구조로 설명한다. 틀린 부분과 고친 형태는 각각 한 단어여야 한다. box는 null(조건은 프로그램이 넣음). choices는 null. answer는 '(B) is → are, (D) using → used' 형식(알파벳 순서대로).",
   };
 
   // 어법·어휘처럼 번호가 지문 속에 박히는 유형은 나중에 정답을 옮길 수 없어, 만들 때 정답 번호를 정해 준다.
   var FIXED_ANSWER_TYPES = { grammar: true, vocab: true };
 
   // targets: 문제마다 원하는 정답 번호(0~4) 목록. 어법·어휘에만 쓴다.
+  // 어법(객관식)·어법 오류 고치기에 붙이는 출제 수준 지침. 뻔한 포인트를 막고 구조 분석이 필요한 문제를 내게 한다.
+  var GRAMMAR_TYPES = { grammar: true, fix: true };
+  var GRAMMAR_GUIDE = [
+    "## 어법 출제 수준 (고2~고3 내신 상위권)",
+    "- 밑줄마다 출제 의도가 분명한 어법 포인트 하나를 묻는다. 학생이 문장 구조를 분석해야 판단할 수 있는 것을 고른다.",
+    "- 아래 포인트를 지문에 맞게 골고루 섞어 쓴다(한 문제 안의 밑줄은 서로 다른 포인트).",
+    "  1. 수일치: 주어와 동사 사이에 전치사구·관계절·분사구·삽입절이 길게 끼어 있는 경우, 주어 찾기가 어려운 경우(동명사구·명사절 주어, the number of / a number of, 부분 표현 + of + 명사, 상관접속사, 선행사와 관계절 동사)",
+    "  2. 주어에서 멀리 떨어진 본동사 찾기: 동사 자리인가 준동사 자리인가, 본동사가 없거나 겹치는 문장",
+    "  3. 문장 형식: 4형식 직접목적어 자리의 that절·what절·의문사절, 5형식 목적격보어 형태(to부정사/원형부정사/현재분사/과거분사) — 사역동사 have·make·let, 지각동사, help, get, keep, find. 특히 have/get + 목적어 + 과거분사",
+    "  4. 가목적어 it + 진목적어(to부정사구·that절), 가주어 it + 진주어",
+    "  5. 동명사만 목적어로 취하는 동사(avoid, deny, mind, finish, consider, postpone, admit, quit, suggest 등), to부정사·동명사에 따라 뜻이 달라지는 동사(remember, forget, stop, regret, try)",
+    "  6. 관계대명사 that vs what: 선행사가 있는가, 뒤 절이 불완전한가",
+    "  7. 관계대명사 vs 관계부사 vs 전치사 + 관계대명사: 뒤 절이 완전한가 불완전한가(which / where / in which / whom / whose)",
+    "  8. 분사구문: 의미상 주어와의 능동·수동(현재분사/과거분사), 완료 분사구문, 접속사 + 분사, 독립 분사구문",
+    "  9. 도치: 부정어(never, rarely, little, hardly, not only, no sooner, only + 부사구) 문두 도치의 어순, 장소·방향 부사구 도치, so/neither 도치, 도치 구문 안의 주어-동사 수일치",
+    "  10. 그 밖의 고난도: 멀리 떨어진 병렬 구조, 대명사 수일치(it/they, that/those), 재귀대명사, 2형식 보어 자리의 형용사 vs 부사, 접속사 vs 전치사(although/despite, because/because of), 자동사의 수동태 불가, 수동태 뒤 목적어",
+    "- 쓰지 말 것(너무 쉬운 포인트): 조동사 뒤 동사원형(will being, can goes 같은 것), 명백한 철자 오류, 주어 바로 뒤 동사의 단순 수일치, 누구나 아는 불규칙 동사 형태, 관사 하나 바꾸기, 뜻이 통하지 않을 만큼 엉뚱한 단어.",
+    "- 틀린 곳은 그럴듯한 함정이어야 한다: 바로 앞 단어만 보면 맞아 보이지만 문장 구조를 분석해야 틀렸음을 알 수 있게 만든다.",
+    "- 옳은 밑줄도 학생이 헷갈릴 만한 고난도 포인트로 고른다(뻔히 옳아 보이는 곳 X).",
+    "- 지문에 해당 구조가 없으면 의미를 바꾸지 않는 범위에서 그 구조가 드러나도록 표현을 조금 바꿔도 된다(어법 오류 고치기에서는 밑줄 문장 안에서만)."
+  ].join("\n");
+
   // avoidNotes: 같은 지문·같은 유형으로 이미 만든 문제 요약(avoidNote). 이것들과 겹치지 않게 만들게 한다.
   function buildPrompt(passage, typeKey, count, targets, avoidNotes) {
     var t = TYPE_BY_KEY[typeKey];
@@ -804,6 +825,7 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
       "",
       "## 유형 설명",
       AI_SPECS[typeKey],
+      GRAMMAR_TYPES[typeKey] ? "\n" + GRAMMAR_GUIDE : "",
       "",
       "## 공통 규칙",
       "- 기본 발문: " + t.instruction,
@@ -813,7 +835,7 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
       "- 객관식 정답은 ①~⑤ 중 하나로 쓰고, 여러 문제의 정답 번호가 한쪽으로 몰리지 않게 합니다.",
       "- 밑줄은 <u>…</u>, 굵은 글씨는 <b>…</b> 태그만 씁니다. 다른 태그나 마크다운은 쓰지 않습니다.",
       "- 문단을 나눌 때는 \\n 을 씁니다.",
-      "- explanation은 한국어 1~2문장으로 씁니다.",
+      GRAMMAR_TYPES[typeKey] ? "- explanation은 한국어로, 출제 포인트와 이유가 드러나게 3~5문장으로 씁니다." : "- explanation은 한국어 1~2문장으로 씁니다.",
       "",
       avoidNotes && avoidNotes.length ? "\n## 이미 만든 문제 (이번 문제는 이것들과 밑줄 위치·빈칸·정답 선지·출제 포인트가 겹치지 않게 새로 만드세요)\n" + avoidNotes.map(function (a) { return "- " + a; }).join("\n") + "\n" : "",
       "## 출력 형식",
@@ -841,13 +863,14 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
       "아래 " + passages.length + "개 지문 각각으로 다음 유형의 문제를 만드세요.",
       "",
       parts.join("\n\n"),
+      requests.some(function (r) { return GRAMMAR_TYPES[r.type]; }) ? "\n" + GRAMMAR_GUIDE : "",
       "",
       "## 공통 규칙",
       "- 같은 유형의 문제끼리는 선지·밑줄 위치·정답 번호가 서로 달라야 합니다.",
       "- 정답은 반드시 하나뿐이어야 합니다. 출력 전에 오답 선지가 지문 내용상 정답이 될 여지가 없는지, 선지끼리 같은 뜻이 아닌지, 표시한 정답과 해설이 맞는지 스스로 다시 확인하세요.",
       "- 객관식 정답은 ①~⑤ 중 하나로 쓰고, 정답 번호가 한쪽으로 몰리지 않게 합니다.",
       "- 밑줄은 <u>…</u>, 굵은 글씨는 <b>…</b> 태그만 씁니다. 다른 태그나 마크다운은 쓰지 않습니다.",
-      "- 문단을 나눌 때는 \\n 을 씁니다. explanation은 한국어 1~2문장.",
+      "- 문단을 나눌 때는 \\n 을 씁니다. explanation은 한국어 1~2문장(어법·어법 오류 고치기는 출제 포인트가 드러나게 3~5문장).",
       planLines(passages, requests, plan),
       "",
       "## 출력 형식",
@@ -1023,6 +1046,7 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
       if (m2 < 3) issues.push("자리 표시가 " + m2 + "개뿐이에요");
     }
     if (WRITE_TYPES[p.type] && !plainText(p.answer)) issues.push("모범 답안이 비어 있어요");
+    issues = issues.concat(trivialGrammar(p));
     if (p.type === "summaryWrite") {
       var words = parseLetteredAnswer(p.answer, ["A", "B", "C"]);
       var body = " " + plainText(p.passage).toLowerCase().replace(/[^a-z'\-]+/g, " ") + " ";
@@ -1062,6 +1086,26 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     return issues;
   }
 
+  // 너무 쉬운 어법 포인트: 틀린 단어 바로 앞이 조동사인 경우(will being, can goes 같은 것)
+  var MODALS = /\b(?:will|would|can|could|shall|should|may|might|must)\s+(?:not\s+)?$/i;
+  function trivialGrammar(p) {
+    var hits = [];
+    if (p.type === "grammar") {
+      var m = String(p.passage || "").match(new RegExp("([^<>]{0,40})<u>\\s*" + p.answer + "\\s*([^<]*)</u>"));
+      if (m && MODALS.test(plainText(m[1]) + " ")) hits.push("정답 " + p.answer + "가 조동사 바로 뒤 동사 형태예요. 너무 쉬운 포인트예요");
+    }
+    if (p.type === "fix") {
+      var rx = /\(([A-E])\)\s*([^\s,→\-]+)\s*(?:→|->|-)\s*([^\s,/]+)/g, f;
+      var text = plainText(p.passage);
+      while ((f = rx.exec(String(p.answer || ""))) !== null) {
+        var idx = text.indexOf(" " + f[2] + " ");
+        if (idx < 0) idx = text.indexOf(" " + f[2]);
+        if (idx >= 0 && MODALS.test(text.slice(Math.max(0, idx - 30), idx + 1))) hits.push("(" + f[1] + ") '" + f[2] + "'는 조동사 바로 뒤 동사 형태예요. 너무 쉬운 포인트예요");
+      }
+    }
+    return hits;
+  }
+
   // "(A) word (B) word (C) word" → {A: "word", ...}
   function parseLetteredAnswer(text, letters) {
     var out = {};
@@ -1097,6 +1141,7 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
       "3. 선지끼리 같은 내용이거나 지나치게 비슷하지 않은가?",
       "4. 어법·어휘 문제는 틀린 곳이 정확히 하나이고, 그것이 표시된 정답 번호인가? 어법 오류 고치기는 지문 전체가 빠짐없이 실렸고, (A)~(E)가 각각 한 문장 전체에 밑줄이 그어졌으며, 그중 틀린 문장이 정확히 2개이고 틀린 부분과 고친 형태가 각각 한 단어인가? 요약 서술형은 (A)~(C)의 정답이 모두 본문에 그대로 나오는 한 단어이고, 다른 본문 단어로는 답이 될 수 없는가?",
       "5. 해설이 정답과 맞는가?",
+      "6. 어법·어법 오류 고치기 문제가 너무 쉬운 포인트(조동사 뒤 동사원형, 철자, 주어 바로 뒤 동사 수일치 등)를 묻고 있지 않은가? 출제 의도가 분명하고 문장 구조를 분석해야 풀 수 있는가? 아니면 같은 정답 번호(알파벳)를 유지한 채 더 높은 수준의 포인트(멀리 떨어진 수일치, 문장 형식, 가목적어, 관계사, 분사구문, 도치 등)로 고친다.",
       "",
       "## 고칠 때 규칙",
       "- 문제가 없으면 ok만 true로 둡니다.",
