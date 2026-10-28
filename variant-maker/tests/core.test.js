@@ -287,21 +287,26 @@ test("요약 서술형: 빈칸 (A)~(C), 답 칸, 정답 단어가 본문에 있�
   assert.ok(VM.buildPrompt(PASSAGE, "summaryWrite", 1).includes("본문(passage)에 그대로 나오는 한 단어"));
 });
 
-test("어법 오류 고치기: (A)~(E) 중 2개, <조건> 상자와 답안 표, 형식 검사", () => {
-  const passage = "Many people <u>(A) believes that</u> creativity is rare. Research <u>(B) suggests that</u> thinking <u>(C) is like</u> a muscle. When we <u>(D) practicing looking</u> at problems, brains <u>(E) form connections</u>.";
-  const p = { type: "fix", instruction: VM.TYPE_BY_KEY.fix.instruction, passage, choices: null, answer: "(A) believes → believe, (D) practicing → practice", source: null };
-  assert.deepStrictEqual(VM.checkProblem(p), []);
-  assert.deepStrictEqual(VM.checkProblem(Object.assign({}, p, { answer: "(A) belief → believe" })), ["고친 곳이 2개가 아니에요 (1개)", "(A)의 틀린 부분 'belief'가 밑줄 안에 없어요"]);
+test("어법 오류 고치기: 지문 전체 + (A)~(E) 한 문장씩, 2문장만 틀림, <조건>과 답안 표", () => {
+  const marks = ["A", "B", "C", "D", "E"];
+  const sents = SENTS.slice();
+  sents[1] = sents[1].replace("suggests", "suggest");   // (B) 틀림
+  sents[3] = sents[3].replace("finds", "find");         // (D) 틀림
+  const passage = sents.map((x, i) => (i < 5 ? "<u>(" + marks[i] + ") " + x + "</u>" : x)).join(" ");
+  const p = { type: "fix", instruction: VM.TYPE_BY_KEY.fix.instruction, passage, choices: null, answer: "(B) suggest → suggests, (D) find → finds", source: null };
+  assert.deepStrictEqual(VM.checkProblem(p, PASSAGE), []);
+  const partial = Object.assign({}, p, { passage: passage.replace("<u>(C) When we practice", "When we <u>(C) practice") });
+  assert.ok(VM.checkProblem(partial, PASSAGE).includes("(C)가 문장 전체에 밑줄이 그어지지 않았어요"));
+  const short = Object.assign({}, p, { passage: sents.slice(0, 5).map((x, i) => "<u>(" + marks[i] + ") " + x + "</u>").join(" ") });
+  assert.ok(VM.checkProblem(short, PASSAGE).some((x) => x.startsWith("지문이 원문보다 짧아요")));
+  assert.deepStrictEqual(VM.checkProblem(Object.assign({}, p, { answer: "(B) belief → believe" }), PASSAGE), ["고친 곳이 2개가 아니에요 (1개)", "(B)의 틀린 부분 'belief'가 밑줄 안에 없어요"]);
+  assert.ok(VM.buildPrompt(PASSAGE, "fix", 1).includes("지문 전체를 빠짐없이") && VM.buildPrompt(PASSAGE, "fix", 1).includes("한 기호 = 한 문장"));
   const blocks = VM.buildBlocks({ title: "t", problems: [p], options: { answers: false } });
-  assert.ok(VM.TYPE_BY_KEY.fix.instruction.includes("(A)~(E) 중 어법상 틀린 부분이 있는 것을 2개 골라 <조건>"));
   assert.deepStrictEqual(blocks.filter((b) => b.kind === "box").map((b) => b.runs[0].text.slice(0, 4)), ["<조건>", "1. 어", "2. 아"]);
   const table = blocks.find((b) => b.kind === "answerTable");
   assert.deepStrictEqual([table.header, table.rows], [["알파벳", "어법상 틀린 부분 (1단어)", "어법상 맞는 형태 (1단어)"], 2]);
-  assert.ok(!blocks.some((b) => b.kind === "answerLine"));
   const hw = Buffer.from(VM.buildHwpx(TEMPLATE, { title: "t", problems: [p], options: {} })).toString("utf8");
   assert.ok(hw.includes('rowCnt="3" colCnt="3"') && hw.includes("<hp:t>어법상 맞는 형태 (1단어)</hp:t>"));
-  const dx = Buffer.from(VM.buildDocx({ title: "t", problems: [p], options: {} })).toString("utf8");
-  assert.ok(dx.includes("어법상 틀린 부분 (1단어)"));
 });
 
 test("정답지에는 정답과 해설만 나온다", () => {

@@ -596,7 +596,7 @@
     state.problems.forEach(function (p, i) { if (p.reviewNote) notes.push(nums[i] + " " + p.reviewNote); });
     if (ai.length) row(!pend.length, "AI 검수", (ai.length - pend.length) + "/" + ai.length + " 완료" + (pend.length ? " · 남은 문제는 " + (sampleFn ? "‘AI로 검수하기’" : "④ 검수 요청문") + "으로 확인하세요" : "") + (notes.length ? " · 고친 곳: " + notes.join(" / ") : ""));
     var bad = [];
-    state.problems.forEach(function (p, i) { var is = VM.checkProblem(p); if (is.length) bad.push(nums[i] + " " + is.join(", ")); });
+    state.problems.forEach(function (p, i) { var is = VM.checkProblem(p, originalText(p.source)); if (is.length) bad.push(nums[i] + " " + is.join(", ")); });
     row(!bad.length, "형식 검사", bad.length ? bad.join(" / ") : "선지 중복·빈 선지·밑줄 번호·정답 위치 이상 없음");
     var dup = [];
     for (var i = 1; i < state.problems.length; i++) {
