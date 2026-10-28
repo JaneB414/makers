@@ -1,0 +1,61 @@
+<title>영어 메이커</title>
+<style>
+:root {
+  --bg: #f6f7f9; --fg: #1d2230; --muted: #5d6475; --line: #d9dce2; --panel: #ffffff;
+  --accent: #1d3a6b; --accent-soft: #e6ecf6;
+  --ui: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #14171e; --fg: #e6e8ee; --muted: #9aa1b2; --line: #2d3240; --panel: #1b1f28; --accent: #8fb0ea; --accent-soft: #24304a; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #14171e; --fg: #e6e8ee; --muted: #9aa1b2; --line: #2d3240; --panel: #1b1f28; --accent: #8fb0ea; --accent-soft: #24304a; color-scheme: dark; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--ui); display: flex; flex-direction: column; }
+.tabs { display: flex; gap: 4px; padding: 10px 16px 0; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; align-items: end; }
+.tabs .brand { font-weight: 700; margin-right: 12px; padding-bottom: 9px; }
+.tabs button { font: inherit; font-size: 14px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: none; color: var(--muted); padding: 8px 14px; cursor: pointer; margin-bottom: -1px; }
+.tabs button[aria-selected="true"] { background: var(--bg); color: var(--fg); border-color: var(--line); font-weight: 600; }
+.tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tabs .note { margin-left: auto; font-size: 12.5px; color: var(--muted); padding-bottom: 9px; }
+@media (max-width: 560px) { .tabs .note { display: none; } }
+.frames { flex: 1; min-height: 0; position: relative; }
+.frames iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
+</style>
+<div class="tabs" role="tablist" aria-label="메이커 고르기">
+  <span class="brand">영어 메이커</span>
+  <button type="button" role="tab" id="tab-variant" aria-controls="frame-variant" aria-selected="true">변형문제</button>
+  <button type="button" role="tab" id="tab-workbook" aria-controls="frame-workbook" aria-selected="false">워크북</button>
+  <span class="note">두 메이커가 지문 보관함을 함께 써요.</span>
+</div>
+<div class="frames" id="frames"></div>
+<script>
+// 각 메이커는 자기 문서 그대로 iframe(srcdoc)에 띄운다. srcdoc은 이 페이지와 같은 출처라서
+// 두 메이커가 같은 브라우저 저장소(지문 보관함)를 보고, 한쪽에서 바꾸면 storage 이벤트로 다른 쪽이 다시 읽는다.
+var DOCS = /*DOCS*/{};
+(function () {
+  "use strict";
+  var KEY = "english-maker-tab";
+  var frames = {};
+  function show(name) {
+    if (!DOCS[name]) return;
+    if (!frames[name]) {
+      var f = document.createElement("iframe");
+      f.id = "frame-" + name;
+      f.title = name === "variant" ? "변형문제 메이커" : "워크북 메이커";
+      f.srcdoc = DOCS[name];
+      document.getElementById("frames").appendChild(f);
+      frames[name] = f;
+    }
+    Object.keys(frames).forEach(function (k) { frames[k].hidden = k !== name; });
+    ["variant", "workbook"].forEach(function (k) {
+      document.getElementById("tab-" + k).setAttribute("aria-selected", String(k === name));
+    });
+    try { localStorage.setItem(KEY, name); } catch (e) { /* 저장 공간을 못 쓰는 환경 */ }
+  }
+  document.getElementById("tab-variant").addEventListener("click", function () { show("variant"); });
+  document.getElementById("tab-workbook").addEventListener("click", function () { show("workbook"); });
+  var start = "variant";
+  try { start = localStorage.getItem(KEY) === "workbook" ? "workbook" : "variant"; } catch (e) { /* 기본 탭 */ }
+  show(start);
+})();
+</script>

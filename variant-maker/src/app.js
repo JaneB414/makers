@@ -1168,6 +1168,12 @@
     renderPages();
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(renderPages);
     window.addEventListener("resize", fitPages);
+    // 워크북 메이커가 같은 보관함을 바꾸면(다른 탭, 또는 영어 메이커의 워크북 탭) 다시 읽는다.
+    window.addEventListener("storage", function (e) {
+      if (e.key !== LIB_KEY) return;
+      var fresh = loadJson(LIB_KEY);
+      if (fresh && Array.isArray(fresh.exams)) { lib = fresh; renderExams(); }
+    });
     renderCoverage();
     renderReviewPrompts();
 
