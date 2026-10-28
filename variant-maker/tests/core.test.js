@@ -311,7 +311,7 @@ test("어법 오류 고치기: 지문 전체 + (A)~(E) 한 문장씩, 2문장만
 
 test("어법 수준: 출제 지침이 요청문에 들어가고, 조동사 뒤 동사원형 같은 뻔한 포인트는 점검에서 잡는다", () => {
   const g = VM.buildPrompt(PASSAGE, "grammar", 1);
-  assert.ok(g.includes("어법 출제 수준") && g.includes("가목적어") && g.includes("부정어") && g.includes("쓰지 말 것"));
+  assert.ok(g.includes("어법 출제 수준") && g.includes("가목적어") && g.includes("부정어") && g.includes("쓰지 말 것") && g.includes("목표 수준 예시"));
   assert.ok(VM.buildPrompt(PASSAGE, "fix", 1).includes("어법 출제 수준"));
   assert.ok(!VM.buildPrompt(PASSAGE, "title", 1).includes("어법 출제 수준"));
   assert.ok(VM.buildCombinedPrompt([{ no: "1", text: "a" }], [{ type: "title", count: 1 }, { type: "grammar", count: 1 }]).includes("어법 출제 수준"));
