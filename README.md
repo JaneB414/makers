@@ -1,7 +1,7 @@
 # makers
 
 - [`variant-maker/`](variant-maker/): 영어 변형문제 메이커. 지문으로 모의고사 유형 변형문제를 만들어 HWPX·PDF로 저장합니다.
-- [`workbook-maker/`](workbook-maker/): 영어 워크북 메이커. 지문으로 어휘·해석·어법·빈칸·배열·영작 활동 워크북을 만들어 HWPX·PDF로 저장합니다. 변형문제 메이커와 지문 보관함을 함께 씁니다.
+- [`workbook-maker/`](workbook-maker/): 영어 워크북 메이커. 지문으로 본문 정리·해석·어휘·빈칸·어법·배열 활동을 유형별로 담은 워크북을 만들어 HWPX·PDF로 저장합니다. 변형문제 메이커와 지문 보관함을 함께 씁니다.
 - `problem_generator.py`: 수학 문제 생성기 (아래 설명)
 
 ## 수학 문제 생성기

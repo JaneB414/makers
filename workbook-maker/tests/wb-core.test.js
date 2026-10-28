@@ -16,7 +16,7 @@ test("빈칸 채우기: 빈칸 낱말을 순서대로 되돌리면 원문이 된
     const d = WB.makeBlank(SENTS, VM.makeRng(seed), {});
     assert.ok(d.answers.length >= 5);
     let k = 0;
-    const restored = plain(d.text).replace(/\(\d+\) [a-z]_{10}/g, () => d.answers[k++]);
+    const restored = plain(d.sentences.join(" ")).replace(/\(\d+\) [a-z]_{10}/g, () => d.answers[k++]);
     assert.strictEqual(restored, SENTS.join(" "));
   }
 });
@@ -87,7 +87,7 @@ test("요청문: 고른 항목만 묻고 문장 번호를 붙인다", () => {
   assert.deepStrictEqual(WB.missingNeeds({ vocab: [] }, ["vocab", "compose", "translate", "blank"]), ["translations"]);
 });
 
-test("워크북 문서: 지문별·활동별로 묶고 HWPX·DOCX 파일을 만든다", () => {
+test("워크북 문서: 활동별 구간에 모든 지문을 출처와 함께 싣고 HWPX·DOCX 파일을 만든다", () => {
   const analysis = {
     translations: SENTS.map((_, i) => "해석 " + (i + 1)),
     vocab: [{ word: "a", form: "", pos: "n.", meaning: "가" }, { word: "b", form: "", pos: "v.", meaning: "나" }],
@@ -96,24 +96,32 @@ test("워크북 문서: 지문별·활동별로 묶고 HWPX·DOCX 파일을 만�
   };
   const rng = VM.makeRng(9);
   const items = [];
-  [{ exam: "A", no: "18" }, { exam: "A", no: "19" }].forEach((src) => {
+  [{ exam: "올림포스2 독해의 기본", no: "11강 Practice 3" }, { exam: "올림포스2 독해의 기본", no: "12" }].forEach((src) => {
     WB.ACTIVITIES.forEach((a) => items.push({ id: src.no + a.key, type: a.key, source: src, data: WB.makeActivity(a.key, SENTS, analysis, rng) }));
   });
   assert.throws(() => WB.makeActivity("translate", SENTS, {}, rng), /AI 분석/);
-  for (const groupBy of ["passage", "type"]) {
-    const sorted = WB.sortItems(items.slice().reverse(), (s) => Number(s.no), groupBy);
-    if (groupBy === "passage") assert.deepStrictEqual(sorted.slice(0, 5).map((i) => i.type), ["vocab", "translate", "blank", "grammar", "scramble"]);
-    else assert.deepStrictEqual(sorted.slice(0, 2).map((i) => i.id), ["18vocab", "19vocab"]);
-    for (const columns of [1, 2]) {
-      const doc = { title: "워크북", layout: {}, options: { columns, groupBy, newPage: true }, items: sorted };
-      const blocks = WB.buildBlocks(doc);
-      assert.strictEqual(blocks.filter((b) => b.kind === "typeHead").length, groupBy === "passage" ? 2 : WB.ACTIVITIES.length);
-      assert.ok(blocks.some((b) => b.kind === "ansTitle"));
-      const hwpx = VM.buildHwpx(TEMPLATE, doc, blocks);
-      const docx = VM.buildDocx(doc, blocks);
-      assert.ok(hwpx.length > 1000 && docx.length > 1000);
-      const xml = Buffer.from(hwpx).toString("utf8");
-      assert.match(xml, /colCnt="4"/); // 어휘 정리 표
-    }
+  assert.throws(() => WB.makeActivity("blank", SENTS, {}, rng), /AI 분석/);
+  const sorted = WB.sortItems(items.slice().reverse(), (s) => (s.no === "12" ? 1 : 0));
+  assert.deepStrictEqual(sorted.slice(0, 2).map((i) => i.id), ["11강 Practice 3study", "12study"]);
+  assert.deepStrictEqual([...new Set(sorted.map((i) => i.type))].slice(0, 6), ["study", "translate", "lexical", "blank", "grammar", "scramble"]);
+  for (const columns of [1, 2]) {
+    const doc = { title: "워크북", layout: {}, options: { columns, newPage: true }, items: sorted };
+    const blocks = WB.buildBlocks(doc);
+    assert.strictEqual(blocks.filter((b) => b.kind === "typeHead").length, WB.ACTIVITIES.length);
+    const asks = blocks.filter((b) => b.kind === "ask").map((b) => b.runs.map((r) => r.text).join(""));
+    assert.strictEqual(asks[0], "1올림포스2 독해의 기본 11강 Practice 3");
+    assert.strictEqual(asks[1], "2올림포스2 독해의 기본 12번");
+    assert.ok(blocks.some((b) => b.kind === "ansTitle"));
+    const hwpx = VM.buildHwpx(TEMPLATE, doc, blocks);
+    const docx = VM.buildDocx(doc, blocks);
+    assert.ok(hwpx.length > 1000 && docx.length > 1000);
+    assert.match(Buffer.from(hwpx).toString("utf8"), /colCnt="4"/); // 단어 정리 표
   }
+});
+
+test("빈칸 채우기: 문장마다 해석을 함께 준다", () => {
+  const tr = SENTS.map((_, i) => "해석 " + i);
+  const d = WB.makeActivity("blank", SENTS, { translations: tr }, VM.makeRng(4));
+  assert.strictEqual(d.sentences.length, SENTS.length);
+  assert.deepStrictEqual(d.translations, tr);
 });

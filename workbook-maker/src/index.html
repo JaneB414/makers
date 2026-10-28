@@ -104,9 +104,10 @@
       <section class="panel" aria-labelledby="h-types">
         <h2 id="h-types"><span class="step">3</span>활동 고르기</h2>
         <p class="hint"><span class="tag auto">자동</span> 무료로 바로 만들어요. <span class="tag ai">AI</span> Claude가 지문마다 해석·어휘·어법 자료를 한 번 만들어 두고, 다시 만들 때는 그대로 써요.</p>
+        <p class="hint">워크북은 변형문제처럼 활동(유형)별로 나뉘고, 각 활동에 고른 지문이 모두 출처와 함께 실려요. 순서: 본문 정리 → 해석 쓰기 → 어휘 양자택일 → 빈칸 채우기 → 어법 선택 → 단어 배열 → 정답.</p>
         <div class="types wb-types" id="types"></div>
         <div class="row">
-          <button type="button" class="link" id="select-default">기본 5가지</button>
+          <button type="button" class="link" id="select-default">기본 6가지</button>
           <button type="button" class="link" id="select-auto">자동 활동만</button>
           <button type="button" class="link" id="select-all">모두 고르기</button>
           <button type="button" class="link" id="select-none">모두 해제</button>
@@ -152,7 +153,7 @@
           <button type="button" id="clear-no">취소</button>
         </div>
 
-        <details id="layout-box">
+        <details id="layout-box" open>
           <summary>워크북 꾸미기 (제목·머리말·꼬리말)</summary>
           <div class="sub grid2">
             <label class="field" for="title">제목
@@ -180,13 +181,7 @@
           <label class="check"><input type="checkbox" id="opt-name" checked> 반·번호·이름 칸</label>
           <label class="check"><input type="checkbox" id="opt-cols"> 2단 편집</label>
           <label class="check"><input type="checkbox" id="opt-answers" checked> 정답지 붙이기</label>
-          <label class="check"><input type="checkbox" id="opt-newpage" checked> 묶음마다 새 쪽</label>
-          <label class="check" for="opt-group">묶는 방식
-            <select id="opt-group" class="inline-select">
-              <option value="passage">지문별 (지문 → 활동)</option>
-              <option value="type">활동별 (활동 → 지문)</option>
-            </select>
-          </label>
+          <label class="check"><input type="checkbox" id="opt-newpage" checked> 유형마다 새 쪽</label>
         </div>
       </div>
       <div class="pages-scroll" id="pages-scroll"><div class="pages" id="pages"></div></div>

@@ -64,17 +64,16 @@
   };
   var PROMPT_PASSAGES = 2; // 수동 요청문 하나에 넣는 지문 수
   var DESC = {
-    read: "문장 번호를 붙인 본문",
-    bilingual: "영어 문장 아래 우리말 해석",
-    vocab: "단어·품사·뜻 표",
-    grammar: "[맞는 형태 / 틀린 형태] 고르기",
-    lexical: "[알맞은 낱말 / 반대 낱말] 고르기",
-    blank: "핵심 낱말 빈칸, 첫 글자 힌트",
-    order: "첫 문장 뒤 (A)~(H) 순서 쓰기",
-    scramble: "문장마다 낱말 덩어리 배열",
+    study: "출처 + 문장별 본문·해석 + 단어·품사·뜻 표",
     translate: "영어 문장 보고 해석 쓰기",
+    lexical: "[알맞은 낱말 / 반대 낱말] 고르기",
+    blank: "문장마다 빈칸(첫 글자 힌트) + 해석",
+    grammar: "[맞는 형태 / 틀린 형태] 고르기",
+    scramble: "문장마다 낱말 덩어리 배열",
+    order: "첫 문장 뒤 (A)~(H) 순서 쓰기",
     compose: "해석 보고 영어 문장 쓰기"
   };
+  var STATE_VERSION = 2; // 활동 구성이 바뀌면 올린다. 예전 워크북은 지우고 기본 활동을 다시 고른다.
 
   function $(id) { return document.getElementById(id); }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -82,7 +81,7 @@
   var state = {
     items: [], selection: {},
     layout: { title: "영어 워크북", eyebrow: "ENGLISH · WORKBOOK", headerLeft: "", headerRight: "", footerLeft: "", footerRight: "", showName: true },
-    options: { columns: 1, answers: true, groupBy: "passage", newPage: true }
+    options: { columns: 1, answers: true, newPage: true }
   };
   var lib = { exams: [], currentExam: null };
   var analysis = {};         // 지문 키(WB.passageKey) → AI 자료 {translations, vocab, grammar, lexical}
@@ -106,7 +105,7 @@
     try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* 저장 공간을 못 쓰는 환경 */ }
   }
   function saveState() {
-    saveJson(STATE_KEY, { items: state.items, selection: state.selection, layout: state.layout, options: state.options, checked: checked, byLine: $("by-line").checked });
+    saveJson(STATE_KEY, { v: STATE_VERSION, items: state.items, selection: state.selection, layout: state.layout, options: state.options, checked: checked, byLine: $("by-line").checked });
   }
   function saveLib() { saveJson(LIB_KEY, lib); }
   function saveAnalysis() { saveJson(ANALYSIS_KEY, analysis); }
@@ -462,7 +461,7 @@
         } catch (e) { skipped.push((p.no ? VM.noLabel(p.no) + " " : "") + WB.BY_KEY[t].name + ": " + e.message); }
       });
     });
-    state.items = WB.sortItems(items, passageRank(), state.options.groupBy);
+    state.items = WB.sortItems(items, passageRank());
     saveState(); renderPages();
     return skipped;
   }
@@ -758,7 +757,7 @@
   function renderPages() {
     var pagesEl = $("pages");
     pagesEl.textContent = "";
-    state.items = WB.sortItems(state.items, passageRank(), state.options.groupBy);
+    state.items = WB.sortItems(state.items, passageRank());
     var n = {};
     state.items.forEach(function (it) { if (it.source) n[(it.source.exam || "") + "\u0001" + it.source.no] = true; });
     $("count").textContent = state.items.length + "개 활동" + (state.items.length ? " · 지문 " + Object.keys(n).length + "개" : "");
@@ -958,12 +957,13 @@
     if (savedLib && Array.isArray(savedLib.exams)) lib = savedLib;
     else savedLib = null;
     if (saved) {
-      // 지금은 없는 활동(예전의 어휘 테스트)은 버린다.
-      state.items = (saved.items || []).filter(function (it) { return WB.BY_KEY[it.type]; });
-      state.selection = saved.selection || {};
-      Object.keys(state.selection).forEach(function (k) { if (!WB.BY_KEY[k]) delete state.selection[k]; });
+      var current = saved.v === STATE_VERSION;
+      state.items = current ? saved.items || [] : [];
+      state.selection = current ? saved.selection || {} : {};
+      if (!current) WB.DEFAULT_KEYS.forEach(function (k) { state.selection[k] = true; });
       Object.assign(state.layout, saved.layout || {});
       Object.assign(state.options, saved.options || {});
+      delete state.options.groupBy; // 예전 '묶는 방식' 설정. 지금은 늘 활동별로 묶는다.
       checked = saved.checked || {};
       $("by-line").checked = !!saved.byLine;
     } else {
@@ -981,12 +981,10 @@
     $("opt-cols").checked = state.options.columns === 2;
     $("opt-answers").checked = state.options.answers !== false;
     $("opt-newpage").checked = !!state.options.newPage;
-    $("opt-group").value = state.options.groupBy || "passage";
     $("opt-name").addEventListener("change", function () { state.layout.showName = $("opt-name").checked; saveState(); renderPages(); });
     $("opt-cols").addEventListener("change", function () { state.options.columns = $("opt-cols").checked ? 2 : 1; saveState(); renderPages(); });
     $("opt-answers").addEventListener("change", function () { state.options.answers = $("opt-answers").checked; saveState(); renderPages(); });
     $("opt-newpage").addEventListener("change", function () { state.options.newPage = $("opt-newpage").checked; saveState(); renderPages(); });
-    $("opt-group").addEventListener("change", function () { state.options.groupBy = $("opt-group").value; saveState(); renderPages(); });
 
     updateSaveHint();
     renderTypes();
