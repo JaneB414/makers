@@ -245,6 +245,39 @@ test("생성 요청문에 복수 정답 금지 규칙이 들어간다", () => {
   assert.ok(VM.buildCombinedPrompt([{ no: "1", text: "a" }], [{ type: "title", count: 1 }]).includes("정답은 반드시 하나뿐"));
 });
 
+test("회차: 이미 만든 문제와 겹치지 않게 새 회차를 만든다 (순서·삽입·배열)", () => {
+  for (const mk of [VM.makeOrder, VM.makeInsert, VM.makeArrange]) {
+    for (let seed = 0; seed < 20; seed++) {
+      const rng = VM.makeRng(seed);
+      let all = [];
+      for (let round = 0; round < 3; round++) all = all.concat(mk(SENTS, 1, rng, VM.answerDeck(rng), all));
+      const sigs = all.map(VM.problemSignature);
+      assert.strictEqual(new Set(sigs).size, 3, mk.name + " seed " + seed);
+    }
+  }
+});
+
+test("회차 중복 찾기: 같은 지문·유형에서 알맹이가 같은 문제", () => {
+  const src = { exam: "E", no: "29" };
+  const g = (u) => ({ type: "grammar", source: src, passage: u.map((w, i) => "<u>" + VM.CIRCLED[i] + w + "</u>").join(" "), choices: null, answer: "①" });
+  const t1 = { type: "title", source: src, choices: ["A", "B", "C", "D", "E"], answer: "②" };
+  const t2 = { type: "title", source: src, choices: ["X", "Y", "b", "Z", "W"], answer: "③" };
+  const t3 = { type: "title", source: { exam: "E", no: "30" }, choices: ["A", "B", "C", "D", "E"], answer: "②" };
+  assert.deepStrictEqual(VM.findDuplicates([g(["a", "b", "c", "d", "e"]), t1, g(["e", "d", "c", "b", "a"]), t2, t3]), [[0, 2], [1, 3]]);
+  assert.strictEqual(VM.avoidNote(g(["go", "went", "x", "y", "z"])), "밑줄 친 곳: go, went, x, y, z");
+  assert.ok(VM.buildPrompt(PASSAGE, "title", 1, null, ["정답 선지: b"]).includes("이미 만든 문제") );
+  const combined = VM.buildCombinedPrompt([{ no: "1", text: "a" }], [{ type: "vocab", count: 1 }], { __avoid: { vocab: { "1": ["밑줄 친 곳: big, small"] } } });
+  assert.ok(combined.includes("지문 [1] 어휘는 이미 만든 문제와 겹치지 않게 (밑줄 친 곳: big, small)"));
+});
+
+test("쪽 번호는 숫자만 (- 3 - 가 아님)", () => {
+  const doc = { title: "t", problems: [{ type: "title", instruction: "q", passage: "p", choices: ["a", "b", "c", "d", "e"], answer: "①" }], layout: { footer: { left: "L", right: "R" } }, options: {} };
+  const hw = Buffer.from(VM.buildHwpx(TEMPLATE, doc)).toString("utf8");
+  assert.ok(!hw.includes("<hp:t>- </hp:t>") && !hw.includes("<hp:t> -</hp:t>"));
+  const dx = Buffer.from(VM.buildDocx(doc)).toString("utf8");
+  assert.ok(!dx.includes('xml:space="preserve">- </w:t>'));
+});
+
 test("정답지에는 정답과 해설만 나온다", () => {
   const blocks = VM.buildBlocks({ title: "t", problems: [{ type: "title", instruction: "q", passage: "p", choices: null, answer: "③", explanation: "해설", source: { exam: "E", no: "29" } }], options: { answers: true, explanations: true } });
   const ans = blocks.filter((b) => b.kind === "ans")[0].runs.map((r) => r.text).join("");

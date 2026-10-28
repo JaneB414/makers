@@ -394,6 +394,14 @@
   }
 
   // 새 문제를 넣고 정렬한 뒤, 새 문제의 정답 번호를 문제지 전체에서 ①~⑤가 고르게 되도록 맞춘다.
+  // 같은 지문(교재·번호)·같은 유형으로 이미 만든 문제들: 새 회차 문제가 이것들과 겹치지 않게 한다.
+  function existingFor(passage, type) {
+    if (!passage || !passage.no) return [];
+    return state.problems.filter(function (q) {
+      return q.type === type && q.source && q.source.no === passage.no && (q.source.exam || "") === (passage.exam || "");
+    });
+  }
+
   function insertProblems(list) {
     list.forEach(function (p) { if (!p.id) p.id = uid(); if (!VM.needsReview(p)) p.reviewed = true; });
     state.problems = state.problems.concat(list);
@@ -427,7 +435,7 @@
       types.filter(function (t) { return t.mode === "auto"; }).forEach(function (t) {
         try {
           decks[t.type] = decks[t.type] || VM.answerDeck(rng);
-          var ps = VM.AUTO_MAKERS[t.type](sents, t.count, rng, decks[t.type]);
+          var ps = VM.AUTO_MAKERS[t.type](sents, t.count, rng, decks[t.type], existingFor(p, t.type));
           ps.forEach(function (x) { x.source = srcOf(p.exam, p); });
           insertProblems(ps);
           made += ps.length;
@@ -595,6 +603,8 @@
       var a = state.problems[i].answer;
       if (VM.CIRCLED.indexOf(a) >= 0 && a === state.problems[i - 1].answer) dup.push(nums[i - 1] + "·" + nums[i] + "(" + a + ")");
     }
+    var same = VM.findDuplicates(state.problems).map(function (pr) { return nums[pr[0]] + "·" + nums[pr[1]]; });
+    row(!same.length, "회차 중복", same.length ? "같은 지문·유형에서 내용이 같은 문제: " + same.join(", ") + " · 한쪽을 삭제하고 다시 만드세요" : "같은 지문·유형의 문제끼리 겹치는 것이 없어요");
     row(!dup.length, "정답 겹침", dup.length ? "앞뒤 문제 정답이 같은 곳: " + dup.join(", ") + " · ‘정답 번호 고르게’를 누르거나, 어법·어휘라면 그 문제를 다시 만드세요" : "앞뒤 문제의 정답이 같은 곳이 없어요");
   }
 
@@ -667,7 +677,13 @@
     });
     for (var i = 0; i < keyed.length; i += PROMPT_PASSAGES) {
       var chunk = keyed.slice(i, i + PROMPT_PASSAGES);
-      var plan = {};
+      var plan = { __avoid: {} };
+      reqs.forEach(function (r) {
+        chunk.forEach(function (p) {
+          var notes = existingFor(target.keyMap[p.no], r.type).map(VM.avoidNote);
+          if (notes.length) (plan.__avoid[r.type] = plan.__avoid[r.type] || {})[p.no] = notes;
+        });
+      });
       reqs.forEach(function (r) {
         chunk.forEach(function (p) {
           var want = answerTargets(promptDecks, r.type, r.count);
@@ -721,7 +737,8 @@
       aborter = new AbortController();
       show($("status"), "", prefix.concat(["AI가 문제를 만드는 중이에요 (" + (i + 1) + "/" + jobs.length + ": " + (job.p.no ? job.p.no + "번 " : "") + job.a.name + "). 하나에 30초~1분쯤 걸려요."]).join(" "));
       try {
-        var data = await sampleFn.json(VM.buildPrompt(job.p.text, job.a.type, job.a.count, answerTargets(aiDecks, job.a.type, job.a.count)), { signal: aborter.signal });
+        var avoidNotes = existingFor(job.p, job.a.type).map(VM.avoidNote);
+        var data = await sampleFn.json(VM.buildPrompt(job.p.text, job.a.type, job.a.count, answerTargets(aiDecks, job.a.type, job.a.count), avoidNotes), { signal: aborter.signal });
         var res = VM.parseAiProblems(data, { type: job.a.type, exam: job.p.exam, no: job.p.no });
         res.problems.forEach(function (x) { x.type = job.a.type; x.source = srcOf(job.p.exam, job.p); });
         if (state.options.review !== false) {
@@ -910,7 +927,7 @@
     var f = document.createElement("div");
     f.className = "p-footer";
     var fl = document.createElement("span"); fl.textContent = L.footerLeft || "";
-    var fc = document.createElement("span"); fc.textContent = "- " + pageNo + " -";
+    var fc = document.createElement("span"); fc.textContent = String(pageNo);
     var fr = document.createElement("span"); fr.textContent = L.footerRight || "";
     f.append(fl, fc, fr);
     page.appendChild(f);

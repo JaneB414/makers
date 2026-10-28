@@ -144,10 +144,73 @@
     };
   }
 
-  function makeOrder(sentences, count, rng, deck) {
+  // ---------- 회차끼리 겹치지 않게 ----------
+
+  function norm(s) { return String(s || "").replace(/<\/?[ub]>/gi, "").replace(/\s+/g, " ").trim().toLowerCase(); }
+
+  function orderSignature(given, chunks) {
+    return "o:" + norm(given) + "|" + chunks.map(norm).sort().join("|");
+  }
+
+  // 문제의 '알맹이'를 나타내는 문자열. 같으면 같은 문제로 본다.
+  function problemSignature(p) {
+    var correct = p.choices && CIRCLED.indexOf(p.answer) >= 0 ? p.choices[CIRCLED.indexOf(p.answer)] : p.answer;
+    var underlines = (String(p.passage || "").match(/<u>([^]*?)<\/u>/gi) || [])
+      .map(function (u) { return norm(u.replace(/<\/?u>/gi, "").replace(/^\s*(?:[①-⑤]|\([a-h]\))\s*/, "")); }).sort().join("|");
+    switch (p.type) {
+      case "order": return orderSignature(p.box, String(p.passage || "").split("\n").map(function (l) { return l.replace(/^\([ABC]\)\s*/, ""); }));
+      case "insert": return "i:" + norm(p.box);
+      case "arrange": return "a:" + norm(p.answer);
+      case "grammar": case "vocab": case "fix": return p.type + ":" + underlines;
+      case "implied": return "m:" + underlines;
+      case "compose": return "c:" + norm(p.answer);
+      default: return p.type + ":" + norm(correct);
+    }
+  }
+
+  function signatureSet(list) {
+    var set = {};
+    (list || []).forEach(function (p) { set[problemSignature(p)] = true; });
+    return set;
+  }
+
+  // 겹치지 않는 후보를 앞에, 겹치는 후보를 뒤에 둔다(모자라면 뒤의 것도 쓴다).
+  function preferFresh(items, sig, taken) {
+    return items.filter(function (x) { return !taken[sig(x)]; }).concat(items.filter(function (x) { return taken[sig(x)]; }));
+  }
+
+  // 같은 지문·같은 유형에서 알맹이가 같은 문제 쌍을 찾는다. 돌려주는 값: [[i, j], ...] (문제지 순서 번호)
+  function findDuplicates(problems) {
+    var seen = {}, pairs = [];
+    problems.forEach(function (p, i) {
+      if (!p.source) return;
+      var k = p.type + "\u0001" + (p.source.exam || "") + "\u0001" + p.source.no + "\u0001" + problemSignature(p);
+      if (seen[k] !== undefined) pairs.push([seen[k], i]);
+      else seen[k] = i;
+    });
+    return pairs;
+  }
+
+  // AI에게 "이미 만든 문제와 겹치지 않게" 알려 줄 한 줄 요약
+  function avoidNote(p) {
+    var correct = p.choices && CIRCLED.indexOf(p.answer) >= 0 ? norm(p.choices[CIRCLED.indexOf(p.answer)]) : "";
+    var underlines = (String(p.passage || "").match(/<u>([^]*?)<\/u>/gi) || []).map(function (u) { return u.replace(/<\/?u>/gi, "").replace(/^\s*(?:[①-⑤]|\([a-h]\))\s*/, "").trim(); });
+    if (p.type === "grammar" || p.type === "vocab" || p.type === "fix") return "밑줄 친 곳: " + underlines.join(", ");
+    if (p.type === "implied") return "밑줄 친 표현: " + underlines.join(", ") + (correct ? " / 정답 선지: " + correct : "");
+    if (p.type === "compose") return "영작한 문장: " + plainText(p.answer);
+    if (p.type === "blank") return "빈칸 정답: " + correct;
+    return "정답 선지: " + correct;
+  }
+
+  // avoid: 같은 지문·같은 유형으로 이미 만든 문제들. 겹치지 않는 것을 먼저 쓴다.
+  function makeOrder(sentences, count, rng, deck, avoid) {
     var n = sentences.length;
     if (n < 4) throw new Error("순서 문제는 문장이 4개 이상 필요합니다. (지금 " + n + "개)");
-    var configs = rng.shuffle(orderConfigs(n));
+    var taken = signatureSet(avoid);
+    var configs = preferFresh(rng.shuffle(orderConfigs(n)), function (c) {
+      var rest = sentences.slice(c.given);
+      return orderSignature(sentences.slice(0, c.given).join(" "), [rest.slice(0, c.cuts[0]), rest.slice(c.cuts[0], c.cuts[1]), rest.slice(c.cuts[1])].map(function (ch) { return ch.join(" "); }));
+    }, taken);
     var answers = deck ? range(count).map(function () { return deck(); }) : spreadAnswers(count, 5, rng);
     var problems = [];
     for (var k = 0; k < count; k++) {
@@ -176,14 +239,16 @@
 
   var LINKERS = /^(however|but|yet|still|thus|therefore|hence|consequently|as a result|for example|for instance|in addition|moreover|furthermore|besides|also|similarly|likewise|in contrast|on the other hand|instead|otherwise|nevertheless|nonetheless|meanwhile|then|this|these|that|those|such|it|they|he|she|its|their|his|her|in other words|in fact|indeed|after all|unfortunately|fortunately)\b/i;
 
-  function makeInsert(sentences, count, rng, deck) {
+  function makeInsert(sentences, count, rng, deck, avoid) {
     var n = sentences.length;
     if (n < 4) throw new Error("문장삽입 문제는 문장이 4개 이상 필요합니다. (지금 " + n + "개)");
     // 빼낼 문장 후보: 첫 문장 제외. 연결어·지시어로 시작하는 문장을 먼저 쓴다.
     var cands = range(n).slice(1);
     var strong = rng.shuffle(cands.filter(function (i) { return LINKERS.test(sentences[i]); }));
     var weak = rng.shuffle(cands.filter(function (i) { return !LINKERS.test(sentences[i]); }));
-    var order = strong.concat(weak);
+    var takenIns = signatureSet(avoid);
+    function isTaken(i) { return takenIns["i:" + norm(sentences[i])]; }
+    var order = preferFresh(strong.concat(weak), function (i) { return "i:" + norm(sentences[i]); }, takenIns);
     var slots = n - 1; // 남은 문장 뒤의 자리 수
     var markers = Math.min(5, slots);
     var problems = [];
@@ -197,7 +262,11 @@
         var want = deck();
         var fresh = order.filter(function (i) { return used.indexOf(i) < 0; });
         if (!fresh.length) { used = []; fresh = order; }
-        removed = fresh.filter(function (i) { var w = slotRange(i); return i - want >= w.lo && i - want <= w.hi; })[0];
+        // 이미 만든 문제와 겹치지 않는 문장을 먼저, 그다음 원하는 정답 번호를 만들 수 있는 문장을 고른다.
+        var fits = function (i) { var w = slotRange(i); return i - want >= w.lo && i - want <= w.hi; };
+        removed = fresh.filter(function (i) { return !isTaken(i) && fits(i); })[0];
+        if (removed === undefined) removed = fresh.filter(function (i) { return !isTaken(i); })[0];
+        if (removed === undefined) removed = fresh.filter(fits)[0];
         if (removed === undefined) removed = fresh[0];
         var w = slotRange(removed);
         startSlot = Math.max(w.lo, Math.min(w.hi, removed - want));
@@ -262,14 +331,18 @@
     return pool.length ? rng.pick(pool) : { start: n - 10, len: 10 };
   }
 
-  function makeArrange(sentences, count, rng) {
+  function makeArrange(sentences, count, rng, deck, avoid) {
     var cands = [];
     sentences.forEach(function (s, i) {
       var words = s.split(" ");
       if (words.length >= 6) cands.push(i);
     });
     if (!cands.length) throw new Error("문장배열 문제를 만들 만큼 긴 문장(6단어 이상)이 없습니다.");
+    // 이미 배열 문제로 쓴 문장은 뒤로 미룬다.
+    var usedAnswers = (avoid || []).filter(function (p) { return p.type === "arrange"; }).map(function (p) { return norm(p.answer); });
     cands = rng.shuffle(cands);
+    cands = cands.filter(function (i) { return !usedAnswers.some(function (a) { return a && norm(sentences[i]).indexOf(a) >= 0; }); })
+      .concat(cands.filter(function (i) { return usedAnswers.some(function (a) { return a && norm(sentences[i]).indexOf(a) >= 0; }); }));
     var problems = [];
     for (var k = 0; k < count; k++) {
       var si = cands[k % cands.length];
@@ -320,7 +393,8 @@
   var FIXED_ANSWER_TYPES = { grammar: true, vocab: true };
 
   // targets: 문제마다 원하는 정답 번호(0~4) 목록. 어법·어휘에만 쓴다.
-  function buildPrompt(passage, typeKey, count, targets) {
+  // avoidNotes: 같은 지문·같은 유형으로 이미 만든 문제 요약(avoidNote). 이것들과 겹치지 않게 만들게 한다.
+  function buildPrompt(passage, typeKey, count, targets, avoidNotes) {
     var t = TYPE_BY_KEY[typeKey];
     if (!t || t.mode !== "ai") throw new Error("AI 유형이 아닙니다: " + typeKey);
     return [
@@ -340,6 +414,7 @@
       "- 문단을 나눌 때는 \\n 을 씁니다.",
       "- explanation은 한국어 1~2문장으로 씁니다.",
       "",
+      avoidNotes && avoidNotes.length ? "\n## 이미 만든 문제 (이번 문제는 이것들과 밑줄 위치·빈칸·정답 선지·출제 포인트가 겹치지 않게 새로 만드세요)\n" + avoidNotes.map(function (a) { return "- " + a; }).join("\n") + "\n" : "",
       "## 출력 형식",
       "설명 없이 JSON만 출력합니다.",
       '{"problems":[{"instruction":"발문","box":"상자에 넣을 글 또는 null","boxFirst":true,"passage":"지문","choices":["…","…","…","…","…"] 또는 null,"answer":"③","explanation":"해설"}]}',
@@ -386,6 +461,14 @@
   function planLines(passages, requests, plan) {
     if (!plan) return "";
     var lines = [];
+    var avoid = plan.__avoid || {};
+    passages.forEach(function (p, i) {
+      var id = p.no || String(i + 1);
+      requests.forEach(function (r) {
+        var notes = avoid[r.type] && avoid[r.type][id];
+        if (notes && notes.length) lines.push("- 지문 [" + id + "] " + TYPE_BY_KEY[r.type].name + "는 이미 만든 문제와 겹치지 않게 (" + notes.join(" / ") + ")");
+      });
+    });
     requests.forEach(function (r) {
       if (!plan[r.type]) return;
       passages.forEach(function (p, i) {
@@ -394,7 +477,7 @@
         if (want && want.length) lines.push("- 지문 [" + id + "] " + TYPE_BY_KEY[r.type].name + ": 정답 번호를 문제 순서대로 " + want.map(function (x) { return CIRCLED[x]; }).join(", ") + "로 만드세요.");
       });
     });
-    return lines.length ? "- 아래 정답 번호를 지켜 주세요.\n" + lines.join("\n") : "";
+    return lines.length ? "- 아래 내용을 지켜 주세요.\n" + lines.join("\n") : "";
   }
 
   // ---------- 지문 여러 개 한꺼번에 등록 ----------
@@ -960,7 +1043,7 @@
     var header = layout.header || {}, footer = layout.footer || {};
     var controls = colPrXml(1, template.__colRule);
     if (header.left || header.right) controls += story("header", "TOP", "header", hfRuns(header.left, [], header.right));
-    controls += story("footer", "BOTTOM", "footer", hfRuns(footer.left, [{ text: "- ", role: "hf" }, { text: "", pageNum: true, role: "hf" }, { text: " -", role: "hf" }], footer.right));
+    controls += story("footer", "BOTTOM", "footer", hfRuns(footer.left, [{ text: "", pageNum: true, role: "hf" }], footer.right));
 
     // 첫 블록은 쪽 설정이 들어 있는 첫 문단에 함께 넣는다(첫 블록은 늘 쪽 전체 너비인 제목 부분).
     var first = blocks[0];
@@ -1201,7 +1284,7 @@
       buildDocxBody(blocks, doc) + "</w:body></w:document>";
     var headerXml = docxStory("hdr", "header", hfRuns(header.left, [], header.right),
       header.left || header.right ? '<w:bottom w:val="single" w:sz="4" w:space="4" w:color="999999"/>' : "");
-    var footerXml = docxStory("ftr", "footer", hfRuns(footer.left, [{ text: "- ", role: "hf" }, { text: "", pageNum: true, role: "hf" }, { text: " -", role: "hf" }], footer.right),
+    var footerXml = docxStory("ftr", "footer", hfRuns(footer.left, [{ text: "", pageNum: true, role: "hf" }], footer.right),
       '<w:top w:val="single" w:sz="4" w:space="4" w:color="' + NAVY + '"/>');
     return makeZip([
       { name: "[Content_Types].xml", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>' },
@@ -1239,6 +1322,9 @@
     noLabel: noLabel,
     parseAiProblems: parseAiProblems,
     parseRuns: parseRuns,
+    problemSignature: problemSignature,
+    findDuplicates: findDuplicates,
+    avoidNote: avoidNote,
     needsReview: needsReview,
     checkProblem: checkProblem,
     buildReviewPrompt: buildReviewPrompt,
