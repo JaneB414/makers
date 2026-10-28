@@ -2,6 +2,15 @@
 (function () {
   "use strict";
 
+  // 실패 이유를 짧게 보여 준다(원인을 찾을 수 있도록).
+  function errorDetail(e) {
+    if (e && e.code === "invalid_json") return " (답변 형식 오류. 지문이 길면 답변이 잘렸을 수 있어요)";
+    var code = e && e.code ? String(e.code) : "";
+    var msg = e && e.message ? String(e.message).slice(0, 80) : (e ? String(e).slice(0, 80) : "");
+    return code || msg ? " (오류: " + [code, msg].filter(Boolean).join(" · ") + ")" : "";
+  }
+
+
   var SAMPLE = "Many people believe that creativity is a rare gift given to only a few. However, research suggests that creative thinking is more like a muscle that grows stronger with regular use. When we practice looking at familiar problems from new angles, our brains form connections that did not exist before. For example, a designer who sketches ten rough ideas each morning soon finds that unusual solutions come more easily. This habit works because quantity eventually leads to quality. Most of the early ideas will be ordinary, but a few will surprise even their creator. Such surprises rarely appear when we wait passively for inspiration. Instead, they tend to emerge in the middle of steady, sometimes boring, effort. Therefore, anyone who wants to be more creative should treat imagination as a daily practice rather than a lucky accident.";
   var STATE_KEY = "variant-maker-v2";
   var LIB_KEY = "variant-maker-library-v1";
@@ -754,7 +763,7 @@
         if (e && e.code === "cancelled") { failed.push("멈췄어요."); break; }
         if (e && e.code === "not_granted") { failed.push("Claude 사용을 허용하지 않아 AI 유형을 만들지 못했어요. 아래 요청문으로 직접 만들 수 있어요."); $("manual").hidden = false; break; }
         if (e && e.code === "rate_limited") { failed.push("요청이 많아 잠시 막혔어요. 1~2분 뒤 다시 눌러 주세요."); $("manual").hidden = false; break; }
-        failed.push("[" + (job.p.no ? job.p.no + "번 " : "") + job.a.name + "] 만들기에 실패했어요" + (e && e.code === "invalid_json" ? " (답변 형식 오류)" : "") + ".");
+        failed.push("[" + (job.p.no ? job.p.no + "번 " : "") + job.a.name + "] 만들기에 실패했어요" + errorDetail(e) + ".");
         $("manual").hidden = false;
       }
     }
