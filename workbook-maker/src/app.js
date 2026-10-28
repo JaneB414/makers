@@ -67,7 +67,6 @@
     read: "문장 번호를 붙인 본문",
     bilingual: "영어 문장 아래 우리말 해석",
     vocab: "단어·품사·뜻 표",
-    vocabTest: "영→한, 한→영 쓰기 표",
     grammar: "[맞는 형태 / 틀린 형태] 고르기",
     lexical: "[알맞은 낱말 / 반대 낱말] 고르기",
     blank: "핵심 낱말 빈칸, 첫 글자 힌트",
@@ -941,7 +940,7 @@
     }
     var sents = VM.splitSentences(SAMPLE);
     analysis[WB.passageKey(sents)] = SAMPLE_ANALYSIS;
-    ["vocab", "grammar", "blank", "scramble", "translate"].forEach(function (k) { state.selection[k] = true; });
+    WB.DEFAULT_KEYS.forEach(function (k) { state.selection[k] = true; });
     if (!savedLib) {
       var rng = VM.makeRng(7);
       state.items = Object.keys(state.selection).map(function (t) {
@@ -959,8 +958,10 @@
     if (savedLib && Array.isArray(savedLib.exams)) lib = savedLib;
     else savedLib = null;
     if (saved) {
-      state.items = saved.items || [];
+      // 지금은 없는 활동(예전의 어휘 테스트)은 버린다.
+      state.items = (saved.items || []).filter(function (it) { return WB.BY_KEY[it.type]; });
       state.selection = saved.selection || {};
+      Object.keys(state.selection).forEach(function (k) { if (!WB.BY_KEY[k]) delete state.selection[k]; });
       Object.assign(state.layout, saved.layout || {});
       Object.assign(state.options, saved.options || {});
       checked = saved.checked || {};
@@ -1035,6 +1036,7 @@
       WB.ACTIVITIES.forEach(function (a) { if (test(a)) state.selection[a.key] = true; else delete state.selection[a.key]; });
       saveState(); renderTypes(); updateTarget();
     }
+    $("select-default").addEventListener("click", function () { selectWhere(function (a) { return WB.DEFAULT_KEYS.indexOf(a.key) >= 0; }); });
     $("select-auto").addEventListener("click", function () { selectWhere(function (a) { return a.mode === "auto"; }); });
     $("select-all").addEventListener("click", function () { selectWhere(function () { return true; }); });
     $("select-none").addEventListener("click", function () { selectWhere(function () { return false; }); });

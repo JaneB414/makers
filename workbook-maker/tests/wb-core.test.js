@@ -84,7 +84,7 @@ test("요청문: 고른 항목만 묻고 문장 번호를 붙인다", () => {
   assert.match(p, /"vocab"/);
   assert.doesNotMatch(p, /"grammar":/);
   assert.match(p, new RegExp("^1\\. " + SENTS[0].slice(0, 10).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "m"));
-  assert.deepStrictEqual(WB.missingNeeds({ vocab: [] }, ["vocabTest", "compose", "translate", "blank"]), ["translations"]);
+  assert.deepStrictEqual(WB.missingNeeds({ vocab: [] }, ["vocab", "compose", "translate", "blank"]), ["translations"]);
 });
 
 test("워크북 문서: 지문별·활동별로 묶고 HWPX·DOCX 파일을 만든다", () => {
@@ -102,8 +102,8 @@ test("워크북 문서: 지문별·활동별로 묶고 HWPX·DOCX 파일을 만�
   assert.throws(() => WB.makeActivity("translate", SENTS, {}, rng), /AI 분석/);
   for (const groupBy of ["passage", "type"]) {
     const sorted = WB.sortItems(items.slice().reverse(), (s) => Number(s.no), groupBy);
-    if (groupBy === "passage") assert.deepStrictEqual(sorted.slice(0, 2).map((i) => i.id), ["18read", "18bilingual"]);
-    else assert.deepStrictEqual(sorted.slice(0, 2).map((i) => i.id), ["18read", "19read"]);
+    if (groupBy === "passage") assert.deepStrictEqual(sorted.slice(0, 5).map((i) => i.type), ["vocab", "translate", "blank", "grammar", "scramble"]);
+    else assert.deepStrictEqual(sorted.slice(0, 2).map((i) => i.id), ["18vocab", "19vocab"]);
     for (const columns of [1, 2]) {
       const doc = { title: "워크북", layout: {}, options: { columns, groupBy, newPage: true }, items: sorted };
       const blocks = WB.buildBlocks(doc);

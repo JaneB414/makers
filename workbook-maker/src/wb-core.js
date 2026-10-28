@@ -7,19 +7,20 @@
   var VM = root.VM || require("../../variant-maker/src/core.js");
 
   // 워크북에 실리는 활동 순서. needs: 이 활동에 필요한 AI 분석 항목
+  // 기본 5가지(단어 → 해석 쓰기 → 빈칸 채우기 → 어법 선택 → 단어 배열)를 앞에 두고, 나머지는 골라서 더 넣는다.
   var ACTIVITIES = [
+    { key: "vocab", name: "단어 정리", mode: "ai", needs: ["vocab"], instruction: "본문에 나온 중요 단어를 익히시오." },
+    { key: "translate", name: "해석 쓰기", mode: "ai", needs: ["translations"], instruction: "다음 문장을 우리말로 해석하시오." },
+    { key: "blank", name: "빈칸 채우기", mode: "auto", needs: [], instruction: "주어진 첫 글자로 시작하는 알맞은 단어를 빈칸에 쓰시오." },
+    { key: "grammar", name: "어법 선택", mode: "ai", needs: ["grammar"], instruction: "[ ] 안에서 어법상 알맞은 것을 고르시오." },
+    { key: "scramble", name: "단어 배열", mode: "auto", needs: [], instruction: "주어진 단어를 모두 한 번씩 사용하여 본문의 문장을 완성하시오." },
     { key: "read", name: "본문 읽기", mode: "auto", needs: [], instruction: "문장 번호를 확인하며 본문을 소리 내어 읽으시오." },
     { key: "bilingual", name: "문장별 해석", mode: "ai", needs: ["translations"], instruction: "영어 문장과 우리말 해석을 비교하며 읽으시오." },
-    { key: "vocab", name: "어휘 정리", mode: "ai", needs: ["vocab"], instruction: "본문의 중요 어휘를 정리하시오." },
-    { key: "vocabTest", name: "어휘 테스트", mode: "ai", needs: ["vocab"], instruction: "빈칸에 단어의 뜻 또는 영어 단어를 쓰시오." },
-    { key: "grammar", name: "어법 선택", mode: "ai", needs: ["grammar"], instruction: "[ ] 안에서 어법상 알맞은 것을 고르시오." },
     { key: "lexical", name: "어휘 선택", mode: "ai", needs: ["lexical"], instruction: "[ ] 안에서 문맥상 알맞은 낱말을 고르시오." },
-    { key: "blank", name: "빈칸 채우기", mode: "auto", needs: [], instruction: "주어진 첫 글자로 시작하는 알맞은 단어를 빈칸에 쓰시오." },
     { key: "order", name: "문장 순서 배열", mode: "auto", needs: [], instruction: "주어진 문장 다음에 이어질 글의 순서를 쓰시오." },
-    { key: "scramble", name: "단어 배열", mode: "auto", needs: [], instruction: "주어진 단어를 모두 한 번씩 사용하여 본문의 문장을 완성하시오." },
-    { key: "translate", name: "해석 쓰기", mode: "ai", needs: ["translations"], instruction: "다음 문장을 우리말로 해석하시오." },
     { key: "compose", name: "영작하기", mode: "ai", needs: ["translations"], instruction: "우리말에 맞게 본문의 영어 문장을 쓰시오." }
   ];
+  var DEFAULT_KEYS = ["vocab", "translate", "blank", "grammar", "scramble"];
   var BY_KEY = {};
   ACTIVITIES.forEach(function (a, i) { a.order = i; BY_KEY[a.key] = a; });
 
@@ -198,17 +199,6 @@
     return { text: text, answers: answers };
   }
 
-  // 어휘 테스트: 앞쪽 절반은 영어 → 뜻, 뒤쪽 절반은 뜻 → 영어
-  function makeVocabTest(vocab, rng) {
-    var list = rng.shuffle(vocab);
-    var half = Math.ceil(list.length / 2);
-    return {
-      rows: list.map(function (v, i) {
-        return i < half ? { ask: "word", word: v.word, meaning: v.meaning } : { ask: "meaning", word: v.word, meaning: v.meaning };
-      })
-    };
-  }
-
   // 활동 하나를 만든다. 분석이 모자라면 오류를 낸다.
   function makeActivity(type, sentences, analysis, rng) {
     var a = analysis || {};
@@ -218,7 +208,6 @@
       case "read": return { sentences: sentences.slice() };
       case "bilingual": return { sentences: sentences.slice(), translations: a.translations.slice() };
       case "vocab": return { rows: a.vocab.map(function (v) { return { word: v.word, pos: v.pos || "", meaning: v.meaning }; }) };
-      case "vocabTest": return makeVocabTest(a.vocab, rng);
       case "grammar": return makeChoice(sentences, a.grammar, rng);
       case "lexical": return makeChoice(sentences, a.lexical, rng);
       case "blank": return makeBlank(sentences, rng, a);
@@ -350,10 +339,6 @@
         out.push({ kind: "answerTable", runs: [], span: 1, widths: [7, 33, 10, 50], header: ["번호", "단어", "품사", "뜻"],
           rows: d.rows.map(function (v, i) { return [String(i + 1), v.word, v.pos, v.meaning]; }) });
         break;
-      case "vocabTest":
-        out.push({ kind: "answerTable", runs: [], span: 1, widths: [7, 40, 53], header: ["번호", "영어", "우리말 뜻"],
-          rows: d.rows.map(function (v, i) { return [String(i + 1), v.ask === "word" ? v.word : "", v.ask === "meaning" ? v.meaning : ""]; }) });
-        break;
       case "grammar":
       case "lexical":
       case "blank":
@@ -393,8 +378,6 @@
   function answerLines(item) {
     var d = item.data;
     switch (item.type) {
-      case "vocabTest":
-        return [d.rows.map(function (v, i) { return (i + 1) + ". " + (v.ask === "word" ? v.meaning : v.word); }).join("   ")];
       case "grammar":
       case "lexical":
         return d.answers.map(function (a, i) { return "(" + (i + 1) + ") <b>" + a.answer + "</b>" + (a.point ? "  " + a.point : ""); });
@@ -492,6 +475,7 @@
 
   var WB = {
     ACTIVITIES: ACTIVITIES,
+    DEFAULT_KEYS: DEFAULT_KEYS,
     BY_KEY: BY_KEY,
     sentMark: sentMark,
     passageKey: passageKey,
@@ -501,7 +485,6 @@
     makeOrder: makeOrder,
     makeScramble: makeScramble,
     makeChoice: makeChoice,
-    makeVocabTest: makeVocabTest,
     makeActivity: makeActivity,
     buildAnalysisPrompt: buildAnalysisPrompt,
     parseAnalysis: parseAnalysis,
