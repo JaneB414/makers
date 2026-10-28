@@ -827,6 +827,16 @@
 
   function blockEl(bl, prev, next) {
     if (bl.kind === "answerGrid") return gridEl(bl);
+    if (bl.kind === "answerTable") {
+      var t = document.createElement("table");
+      t.className = "answer-table";
+      [bl.header].concat(Array.from({ length: bl.rows }, function () { return ["", "", ""]; })).forEach(function (row, r) {
+        var tr = document.createElement("tr");
+        row.forEach(function (text) { var c = document.createElement(r ? "td" : "th"); c.textContent = text; tr.appendChild(c); });
+        t.appendChild(tr);
+      });
+      return t;
+    }
     var el = document.createElement("p");
     el.className = "k-" + bl.kind;
     if (bl.kind === "ask") {

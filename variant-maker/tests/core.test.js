@@ -161,7 +161,7 @@ test("문제 정렬: 유형 순서대로 묶고, 같은 유형 안에서는 지�
   const rank = { "29": 0, "30": 1 };
   const sorted = VM.sortProblems([mk("order", "30"), mk("title", "30"), mk("compose", "29"), mk("order", "29"), mk("title", "29"), mk("claim", null)], (s) => rank[s.no]);
   assert.deepStrictEqual(sorted.map((p) => p.type + (p.source ? p.source.no : "")), ["claim", "title29", "title30", "order29", "order30", "compose29"]);
-  assert.deepStrictEqual(VM.TYPES.map((t) => t.name), ["주장", "요지", "주제", "제목", "함축적 의미", "어법", "어휘", "빈칸", "순서", "문장삽입", "요약", "어법 오류 고치기", "서술형 문장배열", "한글 문장 영작"]);
+  assert.deepStrictEqual(VM.TYPES.map((t) => t.name), ["주장", "요지", "주제", "제목", "함축적 의미", "어법", "어휘", "빈칸", "순서", "문장삽입", "요약", "요약 서술형", "어법 오류 고치기", "서술형 문장배열", "한글 문장 영작"]);
 });
 
 test("회차: 유형 안에서 지문들이 1회차, 2회차 순서로 번갈아 나온다", () => {
@@ -276,6 +276,32 @@ test("쪽 번호는 숫자만 (- 3 - 가 아님)", () => {
   assert.ok(!hw.includes("<hp:t>- </hp:t>") && !hw.includes("<hp:t> -</hp:t>"));
   const dx = Buffer.from(VM.buildDocx(doc)).toString("utf8");
   assert.ok(!dx.includes('xml:space="preserve">- </w:t>'));
+});
+
+test("요약 서술형: 빈칸 (A)~(C), 답 칸, 정답 단어가 본문에 있는지 검사", () => {
+  const p = { type: "summaryWrite", instruction: VM.TYPE_BY_KEY.summaryWrite.instruction, passage: PASSAGE, box: "Creativity grows through daily (A) ________, because (B) ________ leads to quality through steady (C) ________.", boxFirst: false, choices: null, answer: "(A) practice (B) quantity (C) effort" };
+  assert.deepStrictEqual(VM.checkProblem(p), []);
+  assert.deepStrictEqual(VM.checkProblem(Object.assign({}, p, { answer: "(A) practise (B) quantity (C) hard work" })), ["(A) 정답 'practise'가 본문에 없어요", "(C) 정답이 한 단어가 아니에요"]);
+  const blocks = VM.buildBlocks({ title: "t", problems: [p], options: { answers: false } });
+  assert.ok(blocks.some((b) => b.kind === "answerLine" && b.runs[0].text.startsWith("(A) ___")));
+  assert.ok(VM.buildPrompt(PASSAGE, "summaryWrite", 1).includes("본문(passage)에 그대로 나오는 한 단어"));
+});
+
+test("어법 오류 고치기: (A)~(E) 중 2개, <조건> 상자와 답안 표, 형식 검사", () => {
+  const passage = "Many people <u>(A) believes that</u> creativity is rare. Research <u>(B) suggests that</u> thinking <u>(C) is like</u> a muscle. When we <u>(D) practicing looking</u> at problems, brains <u>(E) form connections</u>.";
+  const p = { type: "fix", instruction: VM.TYPE_BY_KEY.fix.instruction, passage, choices: null, answer: "(A) believes → believe, (D) practicing → practice", source: null };
+  assert.deepStrictEqual(VM.checkProblem(p), []);
+  assert.deepStrictEqual(VM.checkProblem(Object.assign({}, p, { answer: "(A) belief → believe" })), ["고친 곳이 2개가 아니에요 (1개)", "(A)의 틀린 부분 'belief'가 밑줄 안에 없어요"]);
+  const blocks = VM.buildBlocks({ title: "t", problems: [p], options: { answers: false } });
+  assert.ok(VM.TYPE_BY_KEY.fix.instruction.includes("(A)~(E) 중 어법상 틀린 부분이 있는 것을 2개 골라 <조건>"));
+  assert.deepStrictEqual(blocks.filter((b) => b.kind === "box").map((b) => b.runs[0].text.slice(0, 4)), ["<조건>", "1. 어", "2. 아"]);
+  const table = blocks.find((b) => b.kind === "answerTable");
+  assert.deepStrictEqual([table.header, table.rows], [["알파벳", "어법상 틀린 부분 (1단어)", "어법상 맞는 형태 (1단어)"], 2]);
+  assert.ok(!blocks.some((b) => b.kind === "answerLine"));
+  const hw = Buffer.from(VM.buildHwpx(TEMPLATE, { title: "t", problems: [p], options: {} })).toString("utf8");
+  assert.ok(hw.includes('rowCnt="3" colCnt="3"') && hw.includes("<hp:t>어법상 맞는 형태 (1단어)</hp:t>"));
+  const dx = Buffer.from(VM.buildDocx({ title: "t", problems: [p], options: {} })).toString("utf8");
+  assert.ok(dx.includes("어법상 틀린 부분 (1단어)"));
 });
 
 test("정답지에는 정답과 해설만 나온다", () => {

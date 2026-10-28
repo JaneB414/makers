@@ -166,6 +166,11 @@ details .sub { display: grid; gap: 8px; margin-top: 8px; }
 .page .answer-grid .g-num { background: #eef1f6; font: 11.33px var(--kr-sans); color: #333; width: 4.5%; }
 .page .answer-grid .g-ans { font: 12.67px var(--en), var(--kr-serif); width: 5.5%; }
 .page .k-gridCaption { font: 700 12.67px/1.4 var(--kr-sans); color: var(--navy); margin: 8px 0 2px; }
+.page .answer-table { border-collapse: collapse; margin: 6px 0 2px; width: 100%; table-layout: fixed; }
+.page .answer-table th, .page .answer-table td { border: 1px solid #aeb6c4; text-align: center; font: 10.67px/1.4 var(--kr-sans); }
+.page .answer-table th { background: #eef1f6; color: #333; font-weight: 400; padding: 3px 2px; }
+.page .answer-table th:first-child { width: 22%; }
+.page .answer-table td { height: 26px; }
 .page .k-ans { font-size: 12.67px; line-height: 1.5; padding-left: 1.8em; text-indent: -1.8em; margin-bottom: 2px; }
 .page .r-ansNum { color: var(--navy); font-weight: 700; }
 .page .r-explain { color: #444; font-size: 11.33px; }

@@ -18,7 +18,8 @@
     { key: "order", name: "순서", mode: "auto", instruction: "주어진 글 다음에 이어질 글의 순서로 가장 적절한 것을 고르시오." },
     { key: "insert", name: "문장삽입", mode: "auto", instruction: "글의 흐름으로 보아, 주어진 문장이 들어가기에 가장 적절한 곳을 고르시오." },
     { key: "summary", name: "요약", mode: "ai", instruction: "다음 글의 내용을 한 문장으로 요약하고자 한다. 빈칸 (A), (B)에 들어갈 말로 가장 적절한 것은?" },
-    { key: "fix", name: "어법 오류 고치기", mode: "ai", instruction: "다음 글의 밑줄 친 부분 중 어법상 틀린 것을 모두 찾아 기호를 쓰고 바르게 고치시오." },
+    { key: "summaryWrite", name: "요약 서술형", mode: "ai", instruction: "다음 글의 내용을 요약했을 때, 빈칸 (A)~(C)에 들어갈 가장 적절한 단어를 본문에서 각각 한 단어씩 찾아 그대로 쓰시오." },
+    { key: "fix", name: "어법 오류 고치기", mode: "ai", instruction: "위 글의 밑줄 친 (A)~(E) 중 어법상 틀린 부분이 있는 것을 2개 골라 <조건>에 맞게 쓰시오." },
     { key: "arrange", name: "서술형 문장배열", mode: "auto", instruction: "다음 글의 빈칸 (A)에 들어갈 말을 <보기>의 단어를 모두 한 번씩 사용하여 바르게 배열하시오." },
     { key: "compose", name: "한글 문장 영작", mode: "ai", instruction: "다음 글의 밑줄 친 우리말 (A)를 <조건>에 맞게 영작하시오." }
   ];
@@ -27,7 +28,7 @@
   var TYPE_ICON = {
     claim: "◆", gist: "◆", topic: "◆", title: "◆", implied: "◆",
     grammar: "■", vocab: "■", blank: "●", summary: "●", order: "▲", insert: "▲",
-    fix: "★", arrange: "★", compose: "★"
+    summaryWrite: "★", fix: "★", arrange: "★", compose: "★"
   };
 
   var TYPE_BY_KEY = {};
@@ -156,7 +157,7 @@
   function problemSignature(p) {
     var correct = p.choices && CIRCLED.indexOf(p.answer) >= 0 ? p.choices[CIRCLED.indexOf(p.answer)] : p.answer;
     var underlines = (String(p.passage || "").match(/<u>([^]*?)<\/u>/gi) || [])
-      .map(function (u) { return norm(u.replace(/<\/?u>/gi, "").replace(/^\s*(?:[①-⑤]|\([a-h]\))\s*/, "")); }).sort().join("|");
+      .map(function (u) { return norm(u.replace(/<\/?u>/gi, "").replace(/^\s*(?:[①-⑤]|\([a-hA-H]\))\s*/, "")); }).sort().join("|");
     switch (p.type) {
       case "order": return orderSignature(p.box, String(p.passage || "").split("\n").map(function (l) { return l.replace(/^\([ABC]\)\s*/, ""); }));
       case "insert": return "i:" + norm(p.box);
@@ -164,6 +165,7 @@
       case "grammar": case "vocab": case "fix": return p.type + ":" + underlines;
       case "implied": return "m:" + underlines;
       case "compose": return "c:" + norm(p.answer);
+      case "summaryWrite": return "w:" + norm(p.answer);
       default: return p.type + ":" + norm(correct);
     }
   }
@@ -194,10 +196,11 @@
   // AI에게 "이미 만든 문제와 겹치지 않게" 알려 줄 한 줄 요약
   function avoidNote(p) {
     var correct = p.choices && CIRCLED.indexOf(p.answer) >= 0 ? norm(p.choices[CIRCLED.indexOf(p.answer)]) : "";
-    var underlines = (String(p.passage || "").match(/<u>([^]*?)<\/u>/gi) || []).map(function (u) { return u.replace(/<\/?u>/gi, "").replace(/^\s*(?:[①-⑤]|\([a-h]\))\s*/, "").trim(); });
+    var underlines = (String(p.passage || "").match(/<u>([^]*?)<\/u>/gi) || []).map(function (u) { return u.replace(/<\/?u>/gi, "").replace(/^\s*(?:[①-⑤]|\([a-hA-H]\))\s*/, "").trim(); });
     if (p.type === "grammar" || p.type === "vocab" || p.type === "fix") return "밑줄 친 곳: " + underlines.join(", ");
     if (p.type === "implied") return "밑줄 친 표현: " + underlines.join(", ") + (correct ? " / 정답 선지: " + correct : "");
     if (p.type === "compose") return "영작한 문장: " + plainText(p.answer);
+    if (p.type === "summaryWrite") return "빈칸 정답: " + plainText(p.answer);
     if (p.type === "blank") return "빈칸 정답: " + correct;
     return "정답 선지: " + correct;
   }
@@ -386,7 +389,8 @@
     blank: "빈칸 추론 문제. passage에서 글의 핵심을 담은 단어·구·절 하나를 ________________ 로 바꾼다(나머지는 원문 그대로). choices는 영어 5개이며 정답은 원문 표현이나 같은 뜻의 바꿔 쓴 표현. 오답은 그럴듯하지만 글의 논리와 맞지 않게 만든다.",
     summary: "요약문 완성 문제. passage는 원문 그대로. box에 글 전체를 요약한 영어 한 문장을 쓰고, 핵심어 두 곳을 (A) ________ 와 (B) ________ 로 비운다. boxFirst는 false. choices는 5개이며 각 항목은 '(A)에 들어갈 말 …… (B)에 들어갈 말' 형식(예: 'flexible …… reduced'). 정답 단어는 본문에 그대로 나오지 않는 바꿔 쓴 말이 좋다.",
     compose: "우리말 영작 문제. passage에서 한 문장(또는 절)을 골라 그 자리를 '(A) <u>그 문장의 자연스러운 한국어 번역</u>'으로 바꾼다. box에는 '<조건>'으로 시작하는 조건 2~3줄(예: 주어진 단어 사용, 단어 수, 필수 어법)을 줄바꿈(\\n)으로 나눠 쓴다. boxFirst는 false. choices는 null. answer는 원문 영어 문장.",
-    fix: "어법 오류를 찾아 고치는 서술형 문제. passage에서 8곳에 <u>(a)단어</u> … <u>(h)단어</u> 형식으로 기호와 밑줄을 넣고, 그중 3곳만 어법상 틀리게 바꾼다(나머지는 원문 그대로). choices는 null. answer는 '(b) is → are, (e) using → used, (g) which → where' 형식."
+    summaryWrite: "요약문 빈칸 서술형 문제. passage는 원문 그대로. box에 글 전체 내용을 요약한 영어 한 문장(또는 두 문장)을 쓰고, 핵심 단어 세 곳을 (A) ________, (B) ________, (C) ________ 로 비운다. 세 빈칸의 정답은 모두 본문(passage)에 그대로 나오는 한 단어여야 하며(형태를 바꾸지 않음), 각 빈칸에 들어갈 수 있는 본문 단어는 하나뿐이어야 한다. boxFirst는 false. choices는 null. answer는 '(A) practice (B) quality (C) effort' 형식.",
+    fix: "어법 오류를 찾아 고치는 서술형 문제. passage에서 서로 다른 어법 포인트 5곳의 구(2~6단어)에 <u>(A) 구</u>, <u>(B) 구</u> … <u>(E) 구</u> 형식으로 기호와 밑줄을 넣는다. 그중 정확히 2곳만 구 안의 한 단어를 어법상 틀리게 바꾸고, 나머지 3곳과 나머지 지문은 원문 그대로 둔다. 틀린 부분은 반드시 한 단어이고 고친 형태도 한 단어여야 한다. box는 null(조건은 프로그램이 넣음). choices는 null. answer는 '(B) is → are, (D) using → used' 형식(알파벳 순서대로).",
   };
 
   // 어법·어휘처럼 번호가 지문 속에 박히는 유형은 나중에 정답을 옮길 수 없어, 만들 때 정답 번호를 정해 준다.
@@ -621,8 +625,47 @@
       if (m2 < 3) issues.push("자리 표시가 " + m2 + "개뿐이에요");
     }
     if (WRITE_TYPES[p.type] && !plainText(p.answer)) issues.push("모범 답안이 비어 있어요");
+    if (p.type === "summaryWrite") {
+      var words = parseLetteredAnswer(p.answer, ["A", "B", "C"]);
+      var body = " " + plainText(p.passage).toLowerCase().replace(/[^a-z'\-]+/g, " ") + " ";
+      ["A", "B", "C"].forEach(function (L) {
+        var w = (words[L] || "").toLowerCase();
+        if (!w) issues.push("(" + L + ") 정답이 없어요");
+        else if (/\s/.test(w)) issues.push("(" + L + ") 정답이 한 단어가 아니에요");
+        else if (body.indexOf(" " + w + " ") < 0) issues.push("(" + L + ") 정답 '" + w + "'가 본문에 없어요");
+      });
+      if ((String(p.box || "").match(/\([ABC]\)/g) || []).length < 3) issues.push("요약문에 빈칸 (A)~(C)가 모두 있지 않아요");
+    }
+    if (p.type === "fix") {
+      var spans = {};
+      (String(p.passage).match(/<u>\s*\(([A-E])\)([^]*?)<\/u>/g) || []).forEach(function (u) {
+        var m = u.match(/<u>\s*\(([A-E])\)([^]*?)<\/u>/);
+        spans[m[1]] = plainText(m[2]).toLowerCase();
+      });
+      if (Object.keys(spans).length !== 5) issues.push("밑줄 기호 (A)~(E)가 " + Object.keys(spans).length + "개예요");
+      var fixes = String(p.answer || "").match(/\(([A-E])\)\s*([^\s,→\-]+)\s*(?:→|->|-)\s*([^\s,/]+)/g) || [];
+      if (fixes.length !== 2) issues.push("고친 곳이 2개가 아니에요 (" + fixes.length + "개)");
+      fixes.forEach(function (f) {
+        var m = f.match(/\(([A-E])\)\s*([^\s,→\-]+)\s*(?:→|->|-)\s*([^\s,/]+)/);
+        var span = spans[m[1]];
+        if (span !== undefined && (" " + span.replace(/[^a-z'\-]+/g, " ") + " ").indexOf(" " + m[2].toLowerCase() + " ") < 0) issues.push("(" + m[1] + ")의 틀린 부분 '" + m[2] + "'가 밑줄 안에 없어요");
+      });
+    }
     if (!plainText(p.passage)) issues.push("지문이 비어 있어요");
     return issues;
+  }
+
+  // "(A) word (B) word (C) word" → {A: "word", ...}
+  function parseLetteredAnswer(text, letters) {
+    var out = {};
+    var s2 = plainText(text);
+    letters.forEach(function (L, i) {
+      var next = letters[i + 1];
+      var re = new RegExp("\\(" + L + "\\)\\s*(.*?)\\s*(?=" + (next ? "\\(" + next + "\\)" : "$") + ")");
+      var m = s2.match(re);
+      if (m) out[L] = m[1].replace(/[,;/]+$/, "").trim();
+    });
+    return out;
   }
 
   // AI 검수 요청문. items: [{id, problem, original(원문, 없어도 됨)}]
@@ -645,7 +688,7 @@
       "1. 정답이 하나뿐인가? 오답 선지 중 지문 내용상 정답으로 볼 수 있는 것(복수 정답)이 없는가?",
       "2. 표시된 정답이 실제로 맞는가?",
       "3. 선지끼리 같은 내용이거나 지나치게 비슷하지 않은가?",
-      "4. 어법·어휘 문제는 틀린 곳이 정확히 하나이고, 그것이 표시된 정답 번호인가? 어법 오류 고치기는 틀린 곳과 모범 답안이 맞는가?",
+      "4. 어법·어휘 문제는 틀린 곳이 정확히 하나이고, 그것이 표시된 정답 번호인가? 어법 오류 고치기는 (A)~(E) 중 틀린 것이 정확히 2개이고, 틀린 부분과 고친 형태가 각각 한 단어인가? 요약 서술형은 (A)~(C)의 정답이 모두 본문에 그대로 나오는 한 단어이고, 다른 본문 단어로는 답이 될 수 없는가?",
       "5. 해설이 정답과 맞는가?",
       "",
       "## 고칠 때 규칙",
@@ -879,7 +922,13 @@
     });
   }
 
-  var WRITE_TYPES = { arrange: true, compose: true, fix: true };
+  var WRITE_TYPES = { arrange: true, compose: true, fix: true, summaryWrite: true };
+  var FIX_CONDITIONS = [
+    "<조건>",
+    "1. 어법상 틀린 부분을 포함하고 있는 것의 알파벳 (A)~(E)과 어법상 틀린 부분(1단어)을 쓰고, 어법에 맞게 고쳐 쓸 것(1단어).",
+    "2. 아래 주어진 표대로 작성할 것."
+  ];
+  var FIX_TABLE_HEADER = ["알파벳", "어법상 틀린 부분 (1단어)", "어법상 맞는 형태 (1단어)"];
   var BOLD_UNDERLINE_TYPES = { grammar: true, vocab: true, fix: true };
   var GRID_PER_ROW = 10; // 정답표 한 줄에 놓는 (번호, 정답) 쌍 수
 
@@ -946,7 +995,16 @@
           blocks.push({ kind: "choice", runs: [plain(CIRCLED[ci] + " ")].concat(parseRuns(c)) });
         });
       }
-      if (WRITE_TYPES[p.type]) blocks.push({ kind: "answerLine", runs: [plain("답: ______________________________________")] });
+      if (p.type === "fix") {
+        FIX_CONDITIONS.forEach(function (line, k) {
+          blocks.push({ kind: "box", runs: [plain(line)], first: k === 0 });
+        });
+        blocks.push({ kind: "answerTable", runs: [], header: FIX_TABLE_HEADER, rows: 2 });
+      } else if (p.type === "summaryWrite") {
+        blocks.push({ kind: "answerLine", runs: [plain("(A) ___________  (B) ___________  (C) ___________")] });
+      } else if (WRITE_TYPES[p.type]) {
+        blocks.push({ kind: "answerLine", runs: [plain("답: ______________________________________")] });
+      }
     });
 
     if (opts.answers !== false && doc.problems.length) {
@@ -990,11 +1048,11 @@
 
   var KIND_CHAR = {
     eyebrow: "eyebrow", title: "title", nameLine: "name", src: "src", ask: "ask",
-    box: "body", para: "body", choice: "body", answerLine: "body", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead", gridCaption: "ans"
+    box: "body", para: "body", choice: "body", answerLine: "body", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead", gridCaption: "ans", answerTable: "body"
   };
   var KIND_PARA = {
     eyebrow: "eyebrow", title: "title", nameLine: "nameLine", src: "src", ask: "ask",
-    box: "box", para: "body", choice: "choice", answerLine: "answerLine", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead", gridCaption: "gridCaption"
+    box: "box", para: "body", choice: "choice", answerLine: "answerLine", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead", gridCaption: "gridCaption", answerTable: "body"
   };
 
   // 굵게·밑줄 조합이 있는 글자 모양이면 그것을, 없으면 가장 가까운 것을 쓴다.
@@ -1054,7 +1112,10 @@
     var pendingBreak = false, currentCols = 1;
     blocks.slice(1).forEach(function (bl) {
       if (bl.kind === "pagebreak") { pendingBreak = true; return; }
-      var runsXml = bl.kind === "answerGrid" ? '<hp:run charPrIDRef="0">' + gridTableXml(template, bl, function () { return pid++; }) + "</hp:run>" : hwpxRuns(style, bl.runs, bl.kind);
+      var nextId = function () { return pid++; };
+      var runsXml = bl.kind === "answerGrid" ? '<hp:run charPrIDRef="0">' + gridTableXml(template, bl, nextId) + "</hp:run>"
+        : bl.kind === "answerTable" ? '<hp:run charPrIDRef="0">' + answerTableXml(template, bl, nextId) + "</hp:run>"
+        : hwpxRuns(style, bl.runs, bl.kind);
       var want = bl.full ? 1 : columns;
       if (want !== currentCols) {
         runsXml = '<hp:run charPrIDRef="0">' + colPrXml(want, template.__colRule) + "</hp:run>" + runsXml;
@@ -1095,6 +1156,29 @@
       '<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>' +
       '<hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="100" right="100" top="60" bottom="60"/>' +
       trs.join("") + "</hp:tbl>";
+  }
+
+  // 서술형 답안 표(머리 행 + 빈 행). 한 단 너비 안에 들어가게 만든다.
+  function answerTableXml(template, bl, nextId) {
+    var style = template.__style;
+    var widths = [5000, 8500, 8500], headH = 1300, rowH = 1900;
+    var rows = [bl.header].concat(range(bl.rows).map(function () { return ["", "", ""]; }));
+    var trs = rows.map(function (row, r) {
+      return "<hp:tr>" + row.map(function (text, c) {
+        var head = r === 0;
+        return '<hp:tc name="" header="' + (head ? 1 : 0) + '" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="' + style.borderFill[head ? "gridNum" : "gridAns"] + '">' +
+          '<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">' +
+          '<hp:p paraPrIDRef="' + style.para.gridCell + '" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0" id="' + nextId() + '"><hp:run charPrIDRef="' + style.char.gridNum + '">' +
+          (text ? "<hp:t>" + xmlEscape(text) + "</hp:t>" : "<hp:t/>") + "</hp:run></hp:p></hp:subList>" +
+          '<hp:cellAddr colAddr="' + c + '" rowAddr="' + r + '"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="' + widths[c] + '" height="' + (head ? headH : rowH) + '"/>' +
+          '<hp:cellMargin left="100" right="100" top="60" bottom="60"/></hp:tc>';
+      }).join("") + "</hp:tr>";
+    });
+    var total = widths.reduce(function (a, b) { return a + b; }, 0);
+    return '<hp:tbl id="' + nextId() + '" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="0" rowCnt="' + rows.length + '" colCnt="3" cellSpacing="0" borderFillIDRef="' + style.borderFill.gridAns + '" noAdjust="0">' +
+      '<hp:sz width="' + total + '" widthRelTo="ABSOLUTE" height="' + (headH + rowH * bl.rows) + '" heightRelTo="ABSOLUTE" protect="0"/>' +
+      '<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>' +
+      '<hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="100" right="100" top="60" bottom="60"/>' + trs.join("") + "</hp:tbl>";
   }
 
   function utf8(s) {
@@ -1236,6 +1320,21 @@
     return '<w:tbl><w:tblPr><w:tblW w:w="' + BODY_TWIP + '" w:type="dxa"/><w:tblBorders>' + border + '</w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>' + grid + "</w:tblGrid>" + trs + "</w:tbl>";
   }
 
+  function docxAnswerTable(bl) {
+    var widths = [1000, 1700, 1700];
+    var border = '<w:top w:val="single" w:sz="4" w:color="AEB6C4"/><w:left w:val="single" w:sz="4" w:color="AEB6C4"/><w:bottom w:val="single" w:sz="4" w:color="AEB6C4"/><w:right w:val="single" w:sz="4" w:color="AEB6C4"/><w:insideH w:val="single" w:sz="4" w:color="AEB6C4"/><w:insideV w:val="single" w:sz="4" w:color="AEB6C4"/>';
+    var rows = [bl.header].concat(range(bl.rows).map(function () { return ["", "", ""]; }));
+    var trs = rows.map(function (row, r) {
+      return '<w:tr><w:trPr><w:trHeight w:val="' + (r ? 380 : 260) + '"/></w:trPr>' + row.map(function (text, c) {
+        return '<w:tc><w:tcPr><w:tcW w:w="' + widths[c] + '" w:type="dxa"/>' + (r === 0 ? '<w:shd w:val="clear" w:color="auto" w:fill="EEF1F6"/>' : "") +
+          '<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:before="20" w:after="20" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr>' +
+          (text ? docxRun({ text: text, role: "gridNum" }, "ans") : "") + "</w:p></w:tc>";
+      }).join("") + "</w:tr>";
+    }).join("");
+    return '<w:tbl><w:tblPr><w:tblW w:w="4400" w:type="dxa"/><w:tblBorders>' + border + '</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>' +
+      widths.map(function (w) { return '<w:gridCol w:w="' + w + '"/>'; }).join("") + "</w:tblGrid>" + trs + "</w:tbl>";
+  }
+
   function buildDocxBody(blocks, doc) {
     var columns = doc.options && doc.options.columns === 1 ? 1 : 2;
     var items = []; // {ppr, body} 문단 또는 {table}
@@ -1252,6 +1351,10 @@
       currentFull = full;
       if (bl.kind === "answerGrid") {
         items.push({ table: docxGridTable(bl) });
+        return;
+      }
+      if (bl.kind === "answerTable") {
+        items.push({ table: docxAnswerTable(bl) });
         return;
       }
       var key = bl.kind === "ask" && bl.first ? "askFirst" : bl.kind;
