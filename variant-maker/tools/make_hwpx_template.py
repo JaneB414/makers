@@ -89,6 +89,8 @@ def main(wheel):
     char("tag", 8, DOTUM, bold=True, color=NAVY, shade=TAG_FILL)  # 발문 끝 유형 꼬리표
     char("typeHead", 10.5, DOTUM, bold=True, color=NAVY)          # 유형 구간 제목
     char("typeRange", 8, DOTUM, color=GRAY)
+    char("gridNum", 8.5, DOTUM, color="#333333")
+    char("gridAns", 9.5, BATANG)
     char("title", 18, BATANG, bold=True)
     char("eyebrow", 8.5, DOTUM, bold=True, color=NAVY)
     char("name", 9, DOTUM)
@@ -125,6 +127,10 @@ def main(wheel):
     border_fill("footRule", {"top": ("SOLID", "0.12 mm", NAVY)})
     border_fill("headerRule", {"bottom": ("SOLID", "0.12 mm", "#999999")})
     border_fill("typeRule", {"bottom": ("SOLID", "0.25 mm", NAVY)})
+    grid_line = ("SOLID", "0.12 mm", "#AEB6C4")
+    all_sides = {"left": grid_line, "right": grid_line, "top": grid_line, "bottom": grid_line}
+    border_fill("gridNum", all_sides, fill="#EEF1F6")  # 정답표 번호 칸
+    border_fill("gridAns", all_sides)                  # 정답표 정답 칸
     h = add_items(h, "borderFills", bf_items)
 
     # 탭: 발문 들여쓰기용(왼쪽 탭), 머리말·꼬리말용(가운데·오른쪽 탭)
@@ -187,6 +193,8 @@ def main(wheel):
     para("header", align="LEFT", line=120, border="headerRule", offsets=(0, 0, 0, 200), tab_id=tab_ids["hf"])
     para("footer", align="LEFT", line=120, border="footRule", offsets=(0, 0, 250, 0), tab_id=tab_ids["hf"])
     para("ansTitle", align="CENTER", after=500, line=130)
+    para("gridCell", align="CENTER", line=100)
+    para("gridCaption", align="LEFT", prev=300, after=150, line=120)
     para("typeHead", align="LEFT", prev=1400, after=200, line=130, border="typeRule", offsets=(0, 0, 0, 150), keep_next=True)
     para("ans", align="LEFT", left=1300, indent=-1300, line=145, after=100)
     para("answerLine", align="LEFT", left=ASK_INDENT, prev=200, line=150)
@@ -203,7 +211,7 @@ def main(wheel):
     files["__firstPara"] = first  # 여는 <hp:p> … 첫 <hp:run>의 secPr까지. 뒤에 단 설정과 머리말·꼬리말을 붙인다.
     files["__colRule"] = RULE
     files["__bodyWidth"] = BODY_WIDTH
-    files["__style"] = {"char": char_ids, "para": para_ids}
+    files["__style"] = {"char": char_ids, "para": para_ids, "borderFill": bf_ids}
 
     js = ("// 한글(HWPX) 빈 문서 틀. tools/make_hwpx_template.py로 만든다.\n"
           "// python-hwpx(Apache-2.0)의 Skeleton.hwpx에 시험지 디자인용 글자·문단 모양을 추가한 것이다.\n"

@@ -17,7 +17,7 @@
   var state = {
     problems: [], selection: {},
     layout: { title: "영어 변형문제", eyebrow: "ENGLISH · 변형문제", headerLeft: "", headerRight: "", footerLeft: "", footerRight: "", showName: true },
-    options: { columns: 2, answers: true, explanations: true, rounds: true, typeMark: "tag" }
+    options: { columns: 2, answers: true, explanations: true, rounds: true, typeMark: "tag", review: true }
   };
   var lib = { exams: [], currentExam: null };
   var editing = null;        // 편집 중인 지문 id (null이면 새 지문)
@@ -28,7 +28,7 @@
   var lastTarget = null;     // 마지막으로 만든 {passages, types}: 빠진 문제 점검용
 
   if (window.claude && typeof window.claude.use === "function") {
-    window.claude.use("sample").then(function (s) { sampleFn = s; updateManualIntro(); }).catch(function () {});
+    window.claude.use("sample").then(function (s) { sampleFn = s; updateManualIntro(); if (s) { renderReviewPrompts(); renderCoverage(); } }).catch(function () {});
     window.claude.use("downloads").then(function (d) { downloadsCap = d; updateSaveHint(); }).catch(function () {});
   }
 
@@ -395,6 +395,7 @@
 
   // 새 문제를 넣고 정렬한 뒤, 새 문제의 정답 번호를 문제지 전체에서 ①~⑤가 고르게 되도록 맞춘다.
   function insertProblems(list) {
+    list.forEach(function (p) { if (!p.id) p.id = uid(); if (!VM.needsReview(p)) p.reviewed = true; });
     state.problems = state.problems.concat(list);
     sortAll();
     VM.balanceAnswers(state.problems, function (p) { return list.indexOf(p) >= 0; });
@@ -455,11 +456,157 @@
     }
   }
 
+  // ---------- 검수(더블체크) ----------
+
+  function originalText(src) {
+    if (!src) return "";
+    var e = lib.exams.filter(function (x) { return x.name === src.exam; })[0];
+    var p = e && e.passages.filter(function (x) { return x.no === src.no; })[0];
+    return p ? p.text : "";
+  }
+
+  function snapshot(p) { return JSON.stringify([p.answer, p.choices, p.passage]); }
+
+  // 검수로 내용이 바뀐 문제만 정답 번호를 다시 맞춘다.
+  function afterReview(problems, before) {
+    var changed = problems.filter(function (p, i) { return snapshot(p) !== before[i]; });
+    if (changed.length) VM.balanceAnswers(state.problems, function (p) { return changed.indexOf(p) >= 0; });
+  }
+
+  async function reviewWithSample(problems, signal) {
+    var items = problems.filter(VM.needsReview).map(function (p, k) { return { id: "r" + (k + 1), problem: p, original: originalText(p.source) }; });
+    if (!items.length) return null;
+    var byId = {};
+    items.forEach(function (it) { byId[it.id] = it.problem; });
+    var data = await sampleFn.json(VM.buildReviewPrompt(items), { signal: signal });
+    return VM.applyReview(data, byId);
+  }
+
+  function pendingReview() {
+    return state.problems.filter(function (p) { return VM.needsReview(p) && !p.reviewed; });
+  }
+
+  // Claude 화면 안: 검수 안 된 AI 문제를 모아 다시 검수한다.
+  async function runReview() {
+    var pending = pendingReview();
+    if (!pending.length) return show($("status"), "ok", "검수할 문제가 없어요. 모두 검수했어요.");
+    var before = state.problems.map(snapshot);
+    var all = state.problems.slice();
+    $("review-run").disabled = true;
+    var fixed = 0, failed = 0;
+    for (var i = 0; i < pending.length; i += REVIEW_CHUNK) {
+      aborter = new AbortController();
+      show($("status"), "", "AI가 문제를 검수하는 중이에요 (" + Math.min(i + REVIEW_CHUNK, pending.length) + "/" + pending.length + ").");
+      try {
+        var r = await reviewWithSample(pending.slice(i, i + REVIEW_CHUNK), aborter.signal);
+        if (r) fixed += r.fixed;
+      } catch (e) { failed++; if (e && e.code === "cancelled") break; }
+    }
+    aborter = null;
+    afterReview(all, before);
+    saveState(); renderPages(); renderCoverage();
+    $("review-run").disabled = false;
+    show($("status"), failed ? "warn" : "ok", "검수를 마쳤어요. 고친 문제 " + fixed + "개." + (failed ? " 일부는 검수하지 못했어요. 다시 눌러 주세요." : ""));
+  }
+
+  // 파일로 열었을 때: 검수 요청문을 만들고, 답변을 붙여 넣어 반영한다.
+  var reviewMap = {};
+  var REVIEW_CHUNK = 6;
+  function renderReviewPrompts() {
+    var box = $("review-prompts");
+    box.textContent = "";
+    reviewMap = {};
+    var pending = pendingReview();
+    $("review-box").hidden = !pending.length || !!sampleFn;
+    $("review-run").hidden = !sampleFn || !pending.length;
+    if (!pending.length || sampleFn) return;
+    var total = Math.ceil(pending.length / REVIEW_CHUNK);
+    for (var i = 0; i < pending.length; i += REVIEW_CHUNK) {
+      var items = pending.slice(i, i + REVIEW_CHUNK).map(function (p, k) {
+        var id = "r" + (i + k + 1);
+        reviewMap[id] = p;
+        return { id: id, problem: p, original: originalText(p.source) };
+      });
+      var row = document.createElement("div");
+      row.className = "prompt-item";
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = "④ 검수 요청문 " + (total > 1 ? (i / REVIEW_CHUNK + 1) + "/" + total + " " : "") + "복사";
+      var note = document.createElement("span");
+      note.className = "hint";
+      b.addEventListener("click", copier(VM.buildReviewPrompt(items), note));
+      row.append(b, note);
+      box.appendChild(row);
+    }
+  }
+
+  function loadReview() {
+    var text = $("review-in").value.trim();
+    if (!text) return show($("status"), "err", "Claude의 검수 답변을 먼저 붙여 넣어 주세요.");
+    try {
+      var before = state.problems.map(snapshot), all = state.problems.slice();
+      var r = VM.applyReview(text, reviewMap);
+      afterReview(all, before);
+      saveState(); renderPages();
+      $("review-in").value = "";
+      show($("status"), "ok", "검수 결과를 반영했어요: " + r.checked + "문제 확인, " + r.fixed + "문제 고침.");
+      renderCoverage(); renderReviewPrompts();
+    } catch (e) { show($("status"), "err", e.message); }
+  }
+
+  // 화면·파일에 나오는 문항 번호 (회차를 나누면 회차마다 1부터)
+  function displayNumbers() {
+    var byRound = state.options.rounds && state.problems.some(function (p) { return p.round > 0; });
+    var n = 0, last = null;
+    return state.problems.map(function (p) {
+      var r = p.round || 0;
+      if (byRound && r !== last) { n = 0; last = r; }
+      n++;
+      return byRound ? (r + 1) + "회차 " + n + "번" : n + "번";
+    });
+  }
+
+  // 점검 칸 아래쪽: 검수 결과, 형식 검사, 앞뒤 정답 겹침
+  function renderQuality(box) {
+    if (!state.problems.length) return;
+    var nums = displayNumbers();
+    var head = document.createElement("p");
+    head.className = "cov-title";
+    head.textContent = "검수(더블체크)";
+    box.appendChild(head);
+    function row(ok, label, text) {
+      var r = document.createElement("p");
+      r.className = "cov-row " + (ok ? "done" : "miss");
+      var b = document.createElement("b"); b.textContent = label;
+      var t = document.createElement("span"); t.textContent = " " + text;
+      r.append(b, t);
+      box.appendChild(r);
+    }
+    var ai = state.problems.filter(VM.needsReview);
+    var pend = ai.filter(function (p) { return !p.reviewed; });
+    var notes = [];
+    state.problems.forEach(function (p, i) { if (p.reviewNote) notes.push(nums[i] + " " + p.reviewNote); });
+    if (ai.length) row(!pend.length, "AI 검수", (ai.length - pend.length) + "/" + ai.length + " 완료" + (pend.length ? " · 남은 문제는 " + (sampleFn ? "‘AI로 검수하기’" : "④ 검수 요청문") + "으로 확인하세요" : "") + (notes.length ? " · 고친 곳: " + notes.join(" / ") : ""));
+    var bad = [];
+    state.problems.forEach(function (p, i) { var is = VM.checkProblem(p); if (is.length) bad.push(nums[i] + " " + is.join(", ")); });
+    row(!bad.length, "형식 검사", bad.length ? bad.join(" / ") : "선지 중복·빈 선지·밑줄 번호·정답 위치 이상 없음");
+    var dup = [];
+    for (var i = 1; i < state.problems.length; i++) {
+      var a = state.problems[i].answer;
+      if (VM.CIRCLED.indexOf(a) >= 0 && a === state.problems[i - 1].answer) dup.push(nums[i - 1] + "·" + nums[i] + "(" + a + ")");
+    }
+    row(!dup.length, "정답 겹침", dup.length ? "앞뒤 문제 정답이 같은 곳: " + dup.join(", ") + " · ‘정답 번호 고르게’를 누르거나, 어법·어휘라면 그 문제를 다시 만드세요" : "앞뒤 문제의 정답이 같은 곳이 없어요");
+  }
+
   // 빠진 문제 점검: 마지막으로 만든 지문 × 유형 × 개수가 문제지에 다 있는지 센다.
   function renderCoverage() {
     var box = $("coverage");
     box.textContent = "";
-    if (!lastTarget || !lastTarget.passages.length) { box.hidden = true; return; }
+    if (!lastTarget || !lastTarget.passages.length) {
+      renderQuality(box);
+      box.hidden = !state.problems.length;
+      return;
+    }
     var have = {};
     state.problems.forEach(function (p) {
       if (!p.source) return;
@@ -490,6 +637,7 @@
     title.textContent = complete
       ? "점검: 고른 지문 " + lastTarget.passages.length + "개 × 유형 " + lastTarget.types.length + "개가 모두 들어 있어요."
       : "점검: 아직 문제가 없는 지문이 있어요. AI 유형이면 나머지 요청문도 보내고 답변을 불러오세요.";
+    renderQuality(box);
     box.hidden = false;
   }
 
@@ -576,6 +724,11 @@
         var data = await sampleFn.json(VM.buildPrompt(job.p.text, job.a.type, job.a.count, answerTargets(aiDecks, job.a.type, job.a.count)), { signal: aborter.signal });
         var res = VM.parseAiProblems(data, { type: job.a.type, exam: job.p.exam, no: job.p.no });
         res.problems.forEach(function (x) { x.type = job.a.type; x.source = srcOf(job.p.exam, job.p); });
+        if (state.options.review !== false) {
+          show($("status"), "", prefix.concat(["AI가 방금 만든 문제를 검수하는 중이에요 (" + (i + 1) + "/" + jobs.length + ": " + (job.p.no ? job.p.no + "번 " : "") + job.a.name + ")."]).join(" "));
+          try { await reviewWithSample(res.problems, aborter.signal); }
+          catch (re) { if (re && re.code === "cancelled") throw re; /* 검수 실패는 문제 만들기를 막지 않는다. 점검 칸에 '검수 안 됨'으로 남는다. */ }
+        }
         insertProblems(res.problems);
         saveState(); renderPages();
         done += res.problems.length;
@@ -609,8 +762,9 @@
       insertProblems(res.problems);
       saveState(); renderPages();
       $("ai-in").value = "";
-      show($("status"), res.warnings.length ? "warn" : "ok", res.problems.length + "문제를 불러왔어요. " + res.warnings.join(" "));
+      show($("status"), res.warnings.length ? "warn" : "ok", res.problems.length + "문제를 불러왔어요. 아래 ④ 검수 요청문으로 한 번 더 확인하세요. " + res.warnings.join(" "));
       renderCoverage();
+      renderReviewPrompts();
     } catch (e) {
       show($("status"), "err", e.message);
     }
@@ -638,7 +792,24 @@
 
   var HEAD_KINDS = { eyebrow: true, title: true, nameLine: true };
 
+  function gridEl(bl) {
+    var table = document.createElement("table");
+    table.className = "answer-grid";
+    for (var r = 0; r * bl.perRow < bl.cells.length; r++) {
+      var tr = document.createElement("tr");
+      for (var k = 0; k < bl.perRow; k++) {
+        var item = bl.cells[r * bl.perRow + k] || ["", ""];
+        var n = document.createElement("td"); n.className = "g-num"; n.textContent = item[0];
+        var a = document.createElement("td"); a.className = "g-ans"; a.textContent = item[1];
+        tr.append(n, a);
+      }
+      table.appendChild(tr);
+    }
+    return table;
+  }
+
   function blockEl(bl, prev, next) {
+    if (bl.kind === "answerGrid") return gridEl(bl);
     var el = document.createElement("p");
     el.className = "k-" + bl.kind;
     if (bl.kind === "ask") {
@@ -678,6 +849,13 @@
       if (HEAD_KINDS[bl.kind]) return;
       if (bl.kind === "pagebreak") { out.push({ pagebreak: true }); cur = null; return; }
       var prevKind = blocks[i - 1] && blocks[i - 1].kind;
+      // 쪽 전체 너비 블록(정답 제목·정답표)은 이어진 것끼리 한 묶음
+      if (bl.full) {
+        if (!cur || !cur.full) { cur = { blocks: [], problem: null, full: true }; out.push(cur); }
+        cur.blocks.push({ bl: bl, prev: blocks[i - 1], next: blocks[i + 1] });
+        return;
+      }
+      if (cur && cur.full) cur = null;
       // 회차 제목·유형 구간 제목은 바로 뒤 문제와 한 묶음으로 둔다.
       var afterHead = prevKind === "roundTitle" || prevKind === "typeHead";
       var starts = bl.kind === "ansTitle" ||
@@ -694,6 +872,8 @@
     });
     return out;
   }
+
+  var curPage = null, curFull = null;
 
   function makePage(pagesEl, pageNo, headBlocks) {
     var L = state.layout;
@@ -713,6 +893,10 @@
       headBlocks.forEach(function (bl) { top.appendChild(blockEl(bl)); });
       page.appendChild(top);
     }
+    curFull = document.createElement("div");
+    curFull.className = "p-full";
+    page.appendChild(curFull);
+    curPage = page;
     var body = document.createElement("div");
     var two = state.options.columns !== 1;
     body.className = "p-body" + (two ? " two" : "");
@@ -756,6 +940,18 @@
     units(blocks).forEach(function (u) {
       if (u.pagebreak) { newPage(); return; }
       var els = u.blocks.map(function (x) { return blockEl(x.bl, x.prev, x.next); });
+      if (u.full) {
+        // 쪽 전체 너비: 단에 이미 내용이 있으면 새 쪽에서, 쪽 위쪽 칸에 놓는다.
+        if (cols.some(function (c) { return c.childElementCount; })) newPage();
+        var hadFull = curFull.childElementCount > 0;
+        els.forEach(function (el) { curFull.appendChild(el); });
+        if (hadFull && curPage.scrollHeight > curPage.clientHeight + 1) {
+          els.forEach(function (el) { el.remove(); });
+          newPage();
+          els.forEach(function (el) { curFull.appendChild(el); });
+        }
+        return;
+      }
       if (u.problem !== null) {
         var host = els[u.blocks.findIndex(function (x) { return x.bl.kind === "src" || x.bl.kind === "ask"; })];
         host.style.position = "relative";
@@ -790,7 +986,7 @@
     box.className = "tools";
     var del = document.createElement("button");
     del.type = "button"; del.textContent = "삭제"; del.title = (i + 1) + "번 삭제";
-    del.addEventListener("click", function () { state.problems.splice(i, 1); saveState(); renderPages(); });
+    del.addEventListener("click", function () { state.problems.splice(i, 1); saveState(); renderPages(); renderCoverage(); renderReviewPrompts(); });
     box.appendChild(del);
     return box;
   }
@@ -945,6 +1141,8 @@
     renderPages();
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(renderPages);
     window.addEventListener("resize", fitPages);
+    renderCoverage();
+    renderReviewPrompts();
 
     $("exam").addEventListener("change", function () { lib.currentExam = $("exam").value || null; saveLib(); editPassage(null); renderExams(); });
     $("exam-new").addEventListener("click", function () { openExamForm("new"); });
@@ -973,6 +1171,10 @@
     $("make").addEventListener("click", make);
     $("stop").addEventListener("click", function () { if (aborter) aborter.abort(); });
     $("load-ai").addEventListener("click", loadAi);
+    $("load-review").addEventListener("click", loadReview);
+    $("review-run").addEventListener("click", runReview);
+    $("opt-review").checked = state.options.review !== false;
+    $("opt-review").addEventListener("change", function () { state.options.review = $("opt-review").checked; saveState(); });
     $("save-hwpx").addEventListener("click", saveHangul);
     $("save-pdf").addEventListener("click", savePdf);
     $("rebalance").addEventListener("click", rebalanceAll);

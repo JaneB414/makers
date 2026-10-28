@@ -334,6 +334,7 @@
       "- 기본 발문: " + t.instruction,
       targets && targets.length ? "- 정답 번호는 문제 순서대로 " + targets.map(function (x) { return CIRCLED[x]; }).join(", ") + "가 되게 만드세요." : "",
       "- 여러 문제를 만들 때는 문제마다 선지·밑줄 위치·정답 번호가 서로 달라야 합니다.",
+      "- 정답은 반드시 하나뿐이어야 합니다. 출력 전에 오답 선지가 지문 내용상 정답이 될 여지가 없는지, 선지끼리 같은 뜻이 아닌지, 표시한 정답과 해설이 맞는지 스스로 다시 확인하세요.",
       "- 객관식 정답은 ①~⑤ 중 하나로 쓰고, 여러 문제의 정답 번호가 한쪽으로 몰리지 않게 합니다.",
       "- 밑줄은 <u>…</u>, 굵은 글씨는 <b>…</b> 태그만 씁니다. 다른 태그나 마크다운은 쓰지 않습니다.",
       "- 문단을 나눌 때는 \\n 을 씁니다.",
@@ -367,6 +368,7 @@
       "",
       "## 공통 규칙",
       "- 같은 유형의 문제끼리는 선지·밑줄 위치·정답 번호가 서로 달라야 합니다.",
+      "- 정답은 반드시 하나뿐이어야 합니다. 출력 전에 오답 선지가 지문 내용상 정답이 될 여지가 없는지, 선지끼리 같은 뜻이 아닌지, 표시한 정답과 해설이 맞는지 스스로 다시 확인하세요.",
       "- 객관식 정답은 ①~⑤ 중 하나로 쓰고, 정답 번호가 한쪽으로 몰리지 않게 합니다.",
       "- 밑줄은 <u>…</u>, 굵은 글씨는 <b>…</b> 태그만 씁니다. 다른 태그나 마크다운은 쓰지 않습니다.",
       "- 문단을 나눌 때는 \\n 을 씁니다. explanation은 한국어 1~2문장.",
@@ -495,6 +497,120 @@
       };
     });
     return { problems: problems, warnings: warnings };
+  }
+
+  // ---------- 검수 ----------
+
+  // AI가 만든 유형(자동 유형은 원문에서 바로 만들어 검수할 필요가 없다)
+  function needsReview(p) {
+    return TYPE_BY_KEY[p.type] && TYPE_BY_KEY[p.type].mode === "ai";
+  }
+
+  function plainText(s) { return String(s || "").replace(/<\/?[ub]>/gi, "").replace(/\s+/g, " ").trim(); }
+
+  // 프로그램이 직접 하는 형식 검사. 문제마다 고칠 점 목록을 돌려준다.
+  function checkProblem(p) {
+    var issues = [];
+    var mcTypes = { claim: 1, gist: 1, topic: 1, title: 1, implied: 1, blank: 1, summary: 1, order: 1 };
+    var ans = CIRCLED.indexOf(p.answer);
+    if (mcTypes[p.type]) {
+      if (!p.choices || p.choices.length !== 5) issues.push("선지가 5개가 아니에요");
+      else {
+        var seen = {};
+        p.choices.forEach(function (c, i) {
+          var k = plainText(c).toLowerCase().replace(/[.!?]$/, "");
+          if (seen[k] !== undefined) issues.push(CIRCLED[seen[k]] + "와 " + CIRCLED[i] + " 선지가 같아요");
+          seen[k] = i;
+          if (!k) issues.push(CIRCLED[i] + " 선지가 비어 있어요");
+        });
+      }
+      if (ans < 0) issues.push("정답이 ①~⑤ 중 하나가 아니에요");
+    }
+    if (p.type === "grammar" || p.type === "vocab") {
+      var marks = (String(p.passage).match(/<u>\s*[①-⑤]/g) || []).map(function (m) { return m.replace(/<u>\s*/, ""); });
+      var uniq = marks.filter(function (m, i) { return marks.indexOf(m) === i; });
+      if (uniq.length !== 5) issues.push("밑줄 번호(①~⑤)가 " + uniq.length + "개예요");
+      if (ans < 0) issues.push("정답이 ①~⑤ 중 하나가 아니에요");
+      else if (uniq.length && uniq.indexOf(p.answer) < 0) issues.push("정답 " + p.answer + "가 지문의 밑줄 번호에 없어요");
+    }
+    if (p.type === "insert") {
+      var m2 = (String(p.passage).match(/\( [①-⑤] \)/g) || []).length;
+      if (m2 < 3) issues.push("자리 표시가 " + m2 + "개뿐이에요");
+    }
+    if (WRITE_TYPES[p.type] && !plainText(p.answer)) issues.push("모범 답안이 비어 있어요");
+    if (!plainText(p.passage)) issues.push("지문이 비어 있어요");
+    return issues;
+  }
+
+  // AI 검수 요청문. items: [{id, problem, original(원문, 없어도 됨)}]
+  function buildReviewPrompt(items) {
+    var body = items.map(function (it) {
+      var p = it.problem;
+      var lines = ["### 문제 " + it.id + " [" + (TYPE_BY_KEY[p.type] ? TYPE_BY_KEY[p.type].name : p.type) + "]", "발문: " + plainText(p.instruction)];
+      if (it.original) lines.push("원문: " + normalizeText(it.original).trim());
+      if (p.box) lines.push("상자: " + p.box);
+      lines.push("지문: " + p.passage);
+      if (p.choices) lines.push("선지:\n" + p.choices.map(function (c, i) { return CIRCLED[i] + " " + c; }).join("\n"));
+      lines.push("표시된 정답: " + p.answer);
+      if (p.explanation) lines.push("해설: " + p.explanation);
+      return lines.join("\n");
+    });
+    return [
+      "당신은 한국 고등학교 영어 시험 출제 검수자입니다. 아래 변형문제를 하나씩 꼼꼼히 검수하세요.",
+      "",
+      "## 확인할 것",
+      "1. 정답이 하나뿐인가? 오답 선지 중 지문 내용상 정답으로 볼 수 있는 것(복수 정답)이 없는가?",
+      "2. 표시된 정답이 실제로 맞는가?",
+      "3. 선지끼리 같은 내용이거나 지나치게 비슷하지 않은가?",
+      "4. 어법·어휘 문제는 틀린 곳이 정확히 하나이고, 그것이 표시된 정답 번호인가? 어법 오류 고치기는 틀린 곳과 모범 답안이 맞는가?",
+      "5. 해설이 정답과 맞는가?",
+      "",
+      "## 고칠 때 규칙",
+      "- 문제가 없으면 ok만 true로 둡니다.",
+      "- 문제가 있으면 ok를 false로 하고 issue에 한국어 한 문장으로 이유를 쓴 뒤, fix에 고친 내용을 넣습니다.",
+      "- 정답 번호는 되도록 바꾸지 말고, 문제가 되는 선지나 밑줄 내용을 고치세요. (정답 번호 배치를 유지하기 위해)",
+      "- fix에는 바꾼 항목만 넣습니다: choices(5개 전부), answer, explanation, passage, box 중 필요한 것.",
+      "- 밑줄은 <u>…</u>, 굵은 글씨는 <b>…</b> 태그만 씁니다.",
+      "",
+      "## 출력 형식",
+      "설명 없이 JSON만 출력합니다.",
+      '{"reviews":[{"id":"' + items[0].id + '","ok":true},{"id":"…","ok":false,"issue":"②도 정답이 될 수 있음","fix":{"choices":["…","…","…","…","…"],"explanation":"…"}}]}',
+      "",
+      "## 검수할 문제",
+      body.join("\n\n")
+    ].join("\n");
+  }
+
+  // 검수 결과를 문제에 반영한다. byId: {id: problem}. 돌려주는 값: {checked, fixed, notes}
+  function applyReview(text, byId) {
+    var reviews = [];
+    extractJsonAll(text).forEach(function (d) {
+      var list = Array.isArray(d) ? d : d.reviews;
+      if (Array.isArray(list)) reviews = reviews.concat(list);
+    });
+    var result = { checked: 0, fixed: 0, notes: [] };
+    reviews.forEach(function (r) {
+      var p = r && byId[String(r.id)];
+      if (!p) return;
+      result.checked++;
+      p.reviewed = true;
+      if (r.ok === false && r.fix && typeof r.fix === "object") {
+        var f = r.fix, changed = false;
+        // 선지는 원래 선지가 있는 객관식 문제에만 바꾼다(어법·어휘처럼 지문 속 번호 문제는 선지가 없다).
+        if (Array.isArray(p.choices) && Array.isArray(f.choices) && f.choices.length === 5) { p.choices = f.choices.map(String); changed = true; }
+        if (f.answer) { p.answer = normalizeAnswer(f.answer); changed = true; }
+        ["explanation", "passage", "box", "instruction"].forEach(function (k) { if (typeof f[k] === "string" && f[k].trim()) { p[k] = f[k]; changed = true; } });
+        if (changed) {
+          result.fixed++;
+          p.reviewNote = String(r.issue || "검수에서 고침");
+          result.notes.push(p.reviewNote);
+        }
+      } else if (r.ok === false) {
+        p.reviewNote = String(r.issue || "확인 필요");
+        result.notes.push(p.reviewNote + " (고친 내용 없음)");
+      }
+    });
+    return result;
   }
 
   // ---------- 문제 정렬 ----------
@@ -681,6 +797,8 @@
   }
 
   var WRITE_TYPES = { arrange: true, compose: true, fix: true };
+  var BOLD_UNDERLINE_TYPES = { grammar: true, vocab: true, fix: true };
+  var GRID_PER_ROW = 10; // 정답표 한 줄에 놓는 (번호, 정답) 쌍 수
 
   // 문제지를 서식 블록 목록으로 바꾼다. 화면 미리보기·PDF·HWPX·DOCX가 모두 같은 블록을 쓴다.
   // 블록: {kind, runs, first?}. run: {text, u, b, role?, tab?}
@@ -691,9 +809,10 @@
     var layout = doc.layout || {};
     function plain(text, role) { var r = { text: text, u: false, b: false }; if (role) r.role = role; return r; }
 
-    if (layout.eyebrow) blocks.push({ kind: "eyebrow", runs: [plain(layout.eyebrow)] });
-    blocks.push({ kind: "title", runs: [plain(doc.title || "영어 변형문제")] });
-    blocks.push({ kind: "nameLine", runs: [plain(layout.showName === false ? "" : "반 ________   번호 ________   이름 ________________")] });
+    // full: 2단 편집이어도 쪽 전체 너비로 놓는 블록(제목 부분, 정답표)
+    if (layout.eyebrow) blocks.push({ kind: "eyebrow", full: true, runs: [plain(layout.eyebrow)] });
+    blocks.push({ kind: "title", full: true, runs: [plain(doc.title || "영어 변형문제")] });
+    blocks.push({ kind: "nameLine", full: true, runs: [plain(layout.showName === false ? "" : "반 ________   번호 ________   이름 ________________")] });
 
     var labels = sourceLabels(doc.problems);
     // 회차 나누기: 회차마다 제목을 달고(2회차부터 새 쪽), 문항 번호를 1부터 다시 센다.
@@ -731,8 +850,12 @@
       var askRuns = [plain(String(nums[i]), "num"), { text: "", u: false, b: false, tab: true }].concat(parseRuns(p.instruction));
       if (showTag && t) askRuns.push(plain(" "), plain("\u00a0" + TYPE_ICON[p.type] + " " + t.name + "\u00a0", "tag"));
       blocks.push({ kind: "ask", first: !labels[i] && !(showSection && blocks[blocks.length - 1].kind === "typeHead"), runs: askRuns });
-      var boxBlocks = p.box ? String(p.box).split(/\n/).filter(function (l) { return l.trim(); }).map(function (l) { return { kind: "box", runs: parseRuns(l) }; }) : [];
-      var paraBlocks = String(p.passage || "").split(/\n/).filter(function (l) { return l.trim(); }).map(function (l) { return { kind: "para", runs: parseRuns(l) }; });
+      // 어법·어휘·어법 고치기 문제는 밑줄 친 부분을 굵게 해서 잘 보이게 한다.
+      var runsOf = BOLD_UNDERLINE_TYPES[p.type]
+        ? function (l) { return parseRuns(l).map(function (r) { if (r.u) r.b = true; return r; }); }
+        : parseRuns;
+      var boxBlocks = p.box ? String(p.box).split(/\n/).filter(function (l) { return l.trim(); }).map(function (l) { return { kind: "box", runs: runsOf(l) }; }) : [];
+      var paraBlocks = String(p.passage || "").split(/\n/).filter(function (l) { return l.trim(); }).map(function (l) { return { kind: "para", runs: runsOf(l) }; });
       if (p.boxFirst) blocks.push.apply(blocks, boxBlocks.concat(paraBlocks));
       else blocks.push.apply(blocks, paraBlocks.concat(boxBlocks));
       if (p.choices) {
@@ -745,7 +868,20 @@
 
     if (opts.answers !== false && doc.problems.length) {
       blocks.push({ kind: "pagebreak", runs: [] });
-      blocks.push({ kind: "ansTitle", runs: [plain("정답" + (opts.explanations ? " 및 해설" : ""))] });
+      blocks.push({ kind: "ansTitle", full: true, runs: [plain("정답" + (opts.explanations ? " 및 해설" : ""))] });
+      // 한눈에 보는 정답표: 객관식(①~⑤) 정답만, 쪽 전체 너비로. 회차를 나누면 회차마다 하나씩.
+      var gridGroups = [];
+      doc.problems.forEach(function (p, i) {
+        if (CIRCLED.indexOf(p.answer) < 0) return;
+        var r = byRound ? (p.round || 0) : 0;
+        var g = gridGroups[gridGroups.length - 1];
+        if (!g || g.round !== r) { g = { round: r, cells: [] }; gridGroups.push(g); }
+        g.cells.push([String(nums[i]), p.answer]);
+      });
+      gridGroups.forEach(function (g) {
+        if (byRound) blocks.push({ kind: "gridCaption", full: true, runs: [plain("[" + (g.round + 1) + "회차]", "ansNum")] });
+        blocks.push({ kind: "answerGrid", full: true, runs: [], cells: g.cells, perRow: GRID_PER_ROW });
+      });
       lastRound = null;
       doc.problems.forEach(function (p, i) {
         if (byRound && (p.round || 0) !== lastRound) {
@@ -771,11 +907,11 @@
 
   var KIND_CHAR = {
     eyebrow: "eyebrow", title: "title", nameLine: "name", src: "src", ask: "ask",
-    box: "body", para: "body", choice: "body", answerLine: "body", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead"
+    box: "body", para: "body", choice: "body", answerLine: "body", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead", gridCaption: "ans"
   };
   var KIND_PARA = {
     eyebrow: "eyebrow", title: "title", nameLine: "nameLine", src: "src", ask: "ask",
-    box: "box", para: "body", choice: "choice", answerLine: "answerLine", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead"
+    box: "box", para: "body", choice: "choice", answerLine: "answerLine", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead", gridCaption: "gridCaption"
   };
 
   // 굵게·밑줄 조합이 있는 글자 모양이면 그것을, 없으면 가장 가까운 것을 쓴다.
@@ -826,25 +962,56 @@
     if (header.left || header.right) controls += story("header", "TOP", "header", hfRuns(header.left, [], header.right));
     controls += story("footer", "BOTTOM", "footer", hfRuns(footer.left, [{ text: "- ", role: "hf" }, { text: "", pageNum: true, role: "hf" }, { text: " -", role: "hf" }], footer.right));
 
-    // 첫 블록은 쪽 설정이 들어 있는 첫 문단에 함께 넣는다.
+    // 첫 블록은 쪽 설정이 들어 있는 첫 문단에 함께 넣는다(첫 블록은 늘 쪽 전체 너비인 제목 부분).
     var first = blocks[0];
     var firstPara = template.__firstPara.replace('paraPrIDRef="0"', 'paraPrIDRef="' + style.para[KIND_PARA[first.kind]] + '"');
     var xml = [template.__secHead, firstPara + controls + "</hp:run>" + hwpxRuns(style, first.runs, first.kind) + "</hp:p>"];
 
-    var pendingBreak = false, columnsStarted = columns === 1;
+    // 쪽 전체 너비 블록(full)과 단 블록이 바뀌는 문단 맨 앞에 단 설정을 새로 넣는다.
+    var pendingBreak = false, currentCols = 1;
     blocks.slice(1).forEach(function (bl) {
       if (bl.kind === "pagebreak") { pendingBreak = true; return; }
-      var runsXml = hwpxRuns(style, bl.runs, bl.kind);
-      // 머리 부분(제목) 다음부터 2단으로 나눈다.
-      if (!columnsStarted && bl.kind !== "eyebrow" && bl.kind !== "title" && bl.kind !== "nameLine") {
-        runsXml = '<hp:run charPrIDRef="0">' + colPrXml(2, template.__colRule) + "</hp:run>" + runsXml;
-        columnsStarted = true;
+      var runsXml = bl.kind === "answerGrid" ? '<hp:run charPrIDRef="0">' + gridTableXml(template, bl, function () { return pid++; }) + "</hp:run>" : hwpxRuns(style, bl.runs, bl.kind);
+      var want = bl.full ? 1 : columns;
+      if (want !== currentCols) {
+        runsXml = '<hp:run charPrIDRef="0">' + colPrXml(want, template.__colRule) + "</hp:run>" + runsXml;
+        currentCols = want;
       }
-      xml.push(p(bl.kind, runsXml, { pageBreak: pendingBreak, first: bl.first }));
+      var kind = bl.kind === "answerGrid" ? "gridCaption" : bl.kind;
+      xml.push(p(kind, runsXml, { pageBreak: pendingBreak, first: bl.first }));
       pendingBreak = false;
     });
     xml.push("</hs:sec>");
     return xml.join("");
+  }
+
+  // 정답표(번호 칸 + 정답 칸 쌍을 한 줄에 perRow개)를 HWPX 표로 만든다.
+  function gridTableXml(template, bl, nextId) {
+    var style = template.__style;
+    var per = bl.perRow, rows = Math.ceil(bl.cells.length / per), cols = per * 2;
+    var numW = 2302, ansW = 2800, rowH = 1150;
+    function cell(text, isNum, r, c) {
+      return '<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="' + style.borderFill[isNum ? "gridNum" : "gridAns"] + '">' +
+        '<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">' +
+        '<hp:p paraPrIDRef="' + style.para.gridCell + '" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0" id="' + nextId() + '"><hp:run charPrIDRef="' + style.char[isNum ? "gridNum" : "gridAns"] + '">' +
+        (text ? "<hp:t>" + xmlEscape(text) + "</hp:t>" : "<hp:t/>") + "</hp:run></hp:p></hp:subList>" +
+        '<hp:cellAddr colAddr="' + c + '" rowAddr="' + r + '"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="' + (isNum ? numW : ansW) + '" height="' + rowH + '"/>' +
+        '<hp:cellMargin left="100" right="100" top="60" bottom="60"/></hp:tc>';
+    }
+    var trs = [];
+    for (var r = 0; r < rows; r++) {
+      var tds = [];
+      for (var k = 0; k < per; k++) {
+        var item = bl.cells[r * per + k] || ["", ""];
+        tds.push(cell(item[0], true, r, k * 2), cell(item[1], false, r, k * 2 + 1));
+      }
+      trs.push("<hp:tr>" + tds.join("") + "</hp:tr>");
+    }
+    return '<hp:tbl id="' + nextId() + '" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="0" rowCnt="' + rows + '" colCnt="' + cols + '" cellSpacing="0" borderFillIDRef="' + style.borderFill.gridAns + '" noAdjust="0">' +
+      '<hp:sz width="' + (numW + ansW) * per + '" widthRelTo="ABSOLUTE" height="' + rowH * rows + '" heightRelTo="ABSOLUTE" protect="0"/>' +
+      '<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>' +
+      '<hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="100" right="100" top="60" bottom="60"/>' +
+      trs.join("") + "</hp:tbl>";
   }
 
   function utf8(s) {
@@ -918,7 +1085,8 @@
     body: [BATANG, 10], ask: [DOTUM, 10, true], num: [BATANG, 13, true, NAVY], src: [DOTUM, 8, true, "6B7688"],
     title: [BATANG, 18, true], eyebrow: [DOTUM, 8.5, true, NAVY], name: [DOTUM, 9], hf: [DOTUM, 8, false, "555555"],
     ansTitle: [BATANG, 14, true], ansNum: [BATANG, 9.5, true, NAVY], ans: [BATANG, 9.5], explain: [BATANG, 8.5, false, "444444"],
-    tag: [DOTUM, 8, true, NAVY, "E3EAF5"], typeHead: [DOTUM, 10.5, true, NAVY], typeRange: [DOTUM, 8, false, "6B7688"]
+    tag: [DOTUM, 8, true, NAVY, "E3EAF5"], typeHead: [DOTUM, 10.5, true, NAVY], typeRange: [DOTUM, 8, false, "6B7688"],
+    gridNum: [DOTUM, 8.5, false, "333333"], gridAns: [BATANG, 9.5]
   };
 
   // 문단 모양 (단위: twip, 1mm ≈ 56.7)
@@ -935,6 +1103,7 @@
     choice: '<w:ind w:left="220" w:hanging="220"/>',
     answerLine: '<w:spacing w:before="40"/><w:ind w:left="' + ASK_TWIP + '"/>',
     ansTitle: '<w:spacing w:after="100"/><w:jc w:val="center"/>',
+    gridCaption: '<w:keepNext/><w:spacing w:before="120" w:after="60"/>',
     roundTitle: '<w:keepNext/><w:spacing w:after="100"/><w:jc w:val="center"/>',
     typeHead: '<w:keepNext/><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="2" w:color="' + NAVY + '"/></w:pBdr><w:spacing w:before="280" w:after="60"/>',
     ans: '<w:spacing w:after="20" w:line="290" w:lineRule="auto"/><w:ind w:left="260" w:hanging="260"/>'
@@ -960,20 +1129,54 @@
       (cols === 2 ? '<w:cols w:num="2" w:space="567" w:sep="1"/>' : '<w:cols w:space="425"/>') + "</w:sectPr>";
   }
 
+  // 정답표를 Word 표로 만든다.
+  function docxGridTable(bl) {
+    var per = bl.perRow, rows = Math.ceil(bl.cells.length / per);
+    var numW = 460, ansW = Math.floor(BODY_TWIP / per) - 460;
+    var border = '<w:top w:val="single" w:sz="4" w:color="AEB6C4"/><w:left w:val="single" w:sz="4" w:color="AEB6C4"/><w:bottom w:val="single" w:sz="4" w:color="AEB6C4"/><w:right w:val="single" w:sz="4" w:color="AEB6C4"/><w:insideH w:val="single" w:sz="4" w:color="AEB6C4"/><w:insideV w:val="single" w:sz="4" w:color="AEB6C4"/>';
+    var grid = "";
+    for (var k = 0; k < per; k++) grid += '<w:gridCol w:w="' + numW + '"/><w:gridCol w:w="' + ansW + '"/>';
+    function cell(text, isNum) {
+      var run = text ? docxRun({ text: text, role: isNum ? "gridNum" : "gridAns" }, "ans") : "";
+      return '<w:tc><w:tcPr><w:tcW w:w="' + (isNum ? numW : ansW) + '" w:type="dxa"/>' + (isNum ? '<w:shd w:val="clear" w:color="auto" w:fill="EEF1F6"/>' : "") +
+        '<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:before="20" w:after="20" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr>' + run + "</w:p></w:tc>";
+    }
+    var trs = "";
+    for (var r = 0; r < rows; r++) {
+      var tds = "";
+      for (var c = 0; c < per; c++) {
+        var item = bl.cells[r * per + c] || ["", ""];
+        tds += cell(item[0], true) + cell(item[1], false);
+      }
+      trs += "<w:tr>" + tds + "</w:tr>";
+    }
+    return '<w:tbl><w:tblPr><w:tblW w:w="' + BODY_TWIP + '" w:type="dxa"/><w:tblBorders>' + border + '</w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>' + grid + "</w:tblGrid>" + trs + "</w:tbl>";
+  }
+
   function buildDocxBody(blocks, doc) {
     var columns = doc.options && doc.options.columns === 1 ? 1 : 2;
-    var out = [];
-    var pendingBreak = false;
-    blocks.forEach(function (bl, i) {
+    var items = []; // {ppr, body} 문단 또는 {table}
+    var pendingBreak = false, currentFull = true;
+    blocks.forEach(function (bl) {
       if (bl.kind === "pagebreak") { pendingBreak = true; return; }
+      var full = !!bl.full;
+      // 쪽 전체 너비 ↔ 단이 바뀌면 바로 앞 문단에서 구역을 끝낸다(앞 문단이 표면 빈 문단을 하나 넣는다).
+      if (columns === 2 && full !== currentFull && items.length) {
+        var last = items[items.length - 1];
+        if (last.table) { last = { ppr: '<w:spacing w:after="0" w:line="120" w:lineRule="exact"/>', body: "" }; items.push(last); }
+        last.ppr += docxSectPr(currentFull ? 1 : 2);
+      }
+      currentFull = full;
+      if (bl.kind === "answerGrid") {
+        items.push({ table: docxGridTable(bl) });
+        return;
+      }
       var key = bl.kind === "ask" && bl.first ? "askFirst" : bl.kind;
-      var ppr = (pendingBreak ? "<w:pageBreakBefore/>" : "") + DOCX_PARA[key];
-      // 제목 부분은 1단 구역, 그 뒤는 2단 구역
-      if (bl.kind === "nameLine" && columns === 2) ppr += docxSectPr(1);
+      items.push({ ppr: (pendingBreak ? "<w:pageBreakBefore/>" : "") + DOCX_PARA[key], body: bl.runs.map(function (r) { return docxRun(r, bl.kind); }).join("") });
       pendingBreak = false;
-      out.push("<w:p><w:pPr>" + ppr + "</w:pPr>" + bl.runs.map(function (r) { return docxRun(r, bl.kind); }).join("") + "</w:p>");
     });
-    out.push(docxSectPr(columns));
+    var out = items.map(function (it) { return it.table ? it.table : "<w:p><w:pPr>" + it.ppr + "</w:pPr>" + it.body + "</w:p>"; });
+    out.push(docxSectPr(columns === 2 && !currentFull ? 2 : 1));
     return out.join("");
   }
 
@@ -1036,6 +1239,10 @@
     noLabel: noLabel,
     parseAiProblems: parseAiProblems,
     parseRuns: parseRuns,
+    needsReview: needsReview,
+    checkProblem: checkProblem,
+    buildReviewPrompt: buildReviewPrompt,
+    applyReview: applyReview,
     sortProblems: sortProblems,
     sourceLabels: sourceLabels,
     buildBlocks: buildBlocks,

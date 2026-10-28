@@ -198,6 +198,53 @@ test("유형 표시: 꼬리표는 발문 끝에, 구간 제목은 유형이 바�
   assert.ok(!none.some((b) => b.kind === "typeHead") && !text(none.filter((b) => b.kind === "ask")[0]).includes("주장"));
 });
 
+test("정답표: 객관식 정답만 한 줄에 10쌍씩, 회차를 나누면 회차마다", () => {
+  const mk = (type, answer, round) => ({ type, round, instruction: "q", passage: "p", choices: null, answer, source: null });
+  const problems = [];
+  for (let k = 0; k < 12; k++) problems.push(mk("title", VM.CIRCLED[k % 5], 0));
+  problems.push(mk("arrange", "This habit works", 0));
+  const grids = VM.buildBlocks({ title: "t", problems, options: { answers: true } }).filter((b) => b.kind === "answerGrid");
+  assert.strictEqual(grids.length, 1);
+  assert.strictEqual(grids[0].cells.length, 12, "서술형은 빼고");
+  assert.deepStrictEqual(grids[0].cells[10], ["11", "①"]);
+  assert.strictEqual(grids[0].perRow, 10);
+  const two = problems.slice(0, 4).map((p, i) => Object.assign({}, p, { round: i < 2 ? 0 : 1 }));
+  const b2 = VM.buildBlocks({ title: "t", problems: two, options: { answers: true, rounds: true } });
+  assert.deepStrictEqual(b2.filter((b) => b.kind === "gridCaption").map((b) => b.runs[0].text), ["[1회차]", "[2회차]"]);
+  assert.deepStrictEqual(b2.filter((b) => b.kind === "answerGrid").map((g) => g.cells.map((c) => c[0]).join(",")), ["1,2", "1,2"]);
+});
+
+test("어법·어휘: 밑줄 친 부분은 굵게 (Word 파일 포함)", () => {
+  const p = { type: "vocab", instruction: "q", passage: "a <u>①big</u> b", choices: null, answer: "①", source: null };
+  const para = VM.buildBlocks({ title: "t", problems: [p], options: { answers: false } }).filter((b) => b.kind === "para")[0];
+  assert.deepStrictEqual(para.runs.find((r) => r.u), { text: "①big", u: true, b: true });
+  const docx = Buffer.from(VM.buildDocx({ title: "t", problems: [p], options: { answers: false } })).toString("utf8");
+  assert.ok(/<w:b\/>[^]*?<w:u w:val="single"\/><\/w:rPr><w:t xml:space="preserve">①big/.test(docx));
+});
+
+test("형식 검사: 선지 중복, 밑줄 번호 수, 정답 위치를 찾아낸다", () => {
+  assert.deepStrictEqual(VM.checkProblem({ type: "title", passage: "p", choices: ["A", "B", "a.", "C", "D"], answer: "②" }), ["①와 ③ 선지가 같아요"]);
+  assert.deepStrictEqual(VM.checkProblem({ type: "grammar", passage: "<u>①a</u> <u>②b</u> <u>③c</u> <u>④d</u>", choices: null, answer: "⑤" }),
+    ["밑줄 번호(①~⑤)가 4개예요", "정답 ⑤가 지문의 밑줄 번호에 없어요"]);
+  assert.deepStrictEqual(VM.checkProblem({ type: "vocab", passage: "<u>①a</u> <u>②b</u> <u>③c</u> <u>④d</u> <u>⑤e</u>", choices: null, answer: "③" }), []);
+  assert.deepStrictEqual(VM.checkProblem(VM.makeOrder(SENTS, 1, VM.makeRng(1))[0]), []);
+});
+
+test("AI 검수: 요청문에 검수 기준이 들어가고, 결과로 선지·해설을 고친다", () => {
+  const p1 = { type: "title", instruction: "q", passage: "p", choices: ["a", "b", "c", "d", "e"], answer: "②", explanation: "" };
+  const p2 = { type: "gist", instruction: "q", passage: "p", choices: ["a", "b", "c", "d", "e"], answer: "④", explanation: "" };
+  const prompt = VM.buildReviewPrompt([{ id: "r1", problem: p1, original: "Original text." }, { id: "r2", problem: p2 }]);
+  assert.ok(prompt.includes("복수 정답") && prompt.includes("### 문제 r1 [제목]") && prompt.includes("원문: Original text.") && prompt.includes("표시된 정답: ④"));
+  const res = VM.applyReview('```json\n{"reviews":[{"id":"r1","ok":true},{"id":"r2","ok":false,"issue":"③도 정답 가능","fix":{"choices":["a","b","x","d","e"],"explanation":"고침"}}]}\n```', { r1: p1, r2: p2 });
+  assert.deepStrictEqual([res.checked, res.fixed], [2, 1]);
+  assert.deepStrictEqual([p1.reviewed, p2.reviewed, p2.choices[2], p2.answer, p2.reviewNote], [true, true, "x", "④", "③도 정답 가능"]);
+});
+
+test("생성 요청문에 복수 정답 금지 규칙이 들어간다", () => {
+  assert.ok(VM.buildPrompt(PASSAGE, "title", 1).includes("정답은 반드시 하나뿐"));
+  assert.ok(VM.buildCombinedPrompt([{ no: "1", text: "a" }], [{ type: "title", count: 1 }]).includes("정답은 반드시 하나뿐"));
+});
+
 test("정답지에는 정답과 해설만 나온다", () => {
   const blocks = VM.buildBlocks({ title: "t", problems: [{ type: "title", instruction: "q", passage: "p", choices: null, answer: "③", explanation: "해설", source: { exam: "E", no: "29" } }], options: { answers: true, explanations: true } });
   const ans = blocks.filter((b) => b.kind === "ans")[0].runs.map((r) => r.text).join("");
@@ -231,7 +278,8 @@ test("HWPX: mimetype이 맨 앞·무압축이고 본문·머리말·쪽 번호·
   assert.strictEqual(bytes.toString("latin1", 38, 57), "application/hwp+zip");
   const text = bytes.toString("utf8");
   assert.ok(text.includes("어법 &amp; &lt;테스트&gt;"));
-  assert.ok(text.includes('charPrIDRef="' + style.char.bodyU + '"><hp:t>①go</hp:t>'), "밑줄 글자 모양");
+  assert.ok(text.includes('charPrIDRef="' + style.char.bodyBU + '"><hp:t>①go</hp:t>'), "어법 밑줄은 굵은 밑줄");
+  assert.ok(text.includes("<hp:tbl ") && text.includes('rowCnt="1" colCnt="20"'), "정답표");
   assert.ok(text.includes('<hp:t>29번</hp:t>'), "원문 번호");
   assert.ok(text.includes('colCount="2"') && text.includes("<hp:colLine"), "2단과 구분선");
   assert.ok(text.includes("<hp:header") && text.includes("<hp:t>행복학원</hp:t>"), "머리말");

@@ -115,7 +115,9 @@
         <div class="row">
           <button type="button" class="primary" id="make">문제 만들기</button>
           <button type="button" id="stop" hidden>멈추기</button>
+          <button type="button" id="review-run" hidden>AI로 검수하기</button>
         </div>
+        <label class="check"><input type="checkbox" id="opt-review" checked> AI 문제는 만든 뒤 한 번 더 검수하기 (복수 정답·정답·해설 확인)</label>
         <p class="hint" id="make-target"></p>
         <div id="status" class="msg" hidden></div>
         <div id="coverage" class="coverage" hidden></div>
@@ -127,6 +129,14 @@
             <textarea id="ai-in" class="mono" rows="6" placeholder='{"problems":[ ... ]}'></textarea>
           </label>
           <div class="row"><button type="button" class="primary" id="load-ai">③ 불러오기</button></div>
+        </div>
+        <div id="review-box" class="ai-out" hidden>
+          <p class="hint">불러온 AI 문제를 한 번 더 검수해요. ④ 검수 요청문을 Claude 채팅에 보내고, 답변을 아래에 붙여 넣은 뒤 ⑤를 누르세요. 복수 정답, 정답 표시, 해설이 맞는지 확인하고 틀린 곳은 고쳐 줘요.</p>
+          <div id="review-prompts" class="prompts"></div>
+          <label class="field" for="review-in">Claude의 검수 답변 붙여넣기
+            <textarea id="review-in" class="mono" rows="4" placeholder='{"reviews":[ ... ]}'></textarea>
+          </label>
+          <div class="row"><button type="button" class="primary" id="load-review">⑤ 검수 결과 불러오기</button></div>
         </div>
       </section>
     </div>
