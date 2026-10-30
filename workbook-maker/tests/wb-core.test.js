@@ -102,8 +102,8 @@ test("워크북 문서: 활동별 구간에 모든 지문을 출처와 함께 �
   assert.throws(() => WB.makeActivity("translate", SENTS, {}, rng), /AI 분석/);
   assert.throws(() => WB.makeActivity("blank", SENTS, {}, rng), /AI 분석/);
   const sorted = WB.sortItems(items.slice().reverse(), (s) => (s.no === "12" ? 1 : 0));
-  assert.deepStrictEqual(sorted.slice(0, 2).map((i) => i.id), ["11강 Practice 3study", "12study"]);
-  assert.deepStrictEqual([...new Set(sorted.map((i) => i.type))].slice(0, 6), ["study", "translate", "lexical", "blank", "grammar", "scramble"]);
+  assert.deepStrictEqual(sorted.slice(0, 2).map((i) => i.id), ["11강 Practice 3vocab", "12vocab"]);
+  assert.deepStrictEqual([...new Set(sorted.map((i) => i.type))].slice(0, 7), ["vocab", "study", "translate", "lexical", "blank", "grammar", "scramble"]);
   for (const columns of [1, 2]) {
     const doc = { title: "워크북", layout: {}, options: { columns, newPage: true }, items: sorted };
     const blocks = WB.buildBlocks(doc);

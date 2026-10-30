@@ -9,7 +9,8 @@
   // 워크북에 실리는 활동 순서. 활동마다 구간을 나누고, 구간 안에 고른 지문을 모두 싣는다(변형문제 메이커의 유형별 구성).
   // needs: 이 활동에 필요한 AI 분석 항목. 기본 6가지를 앞에 두고, 나머지는 골라서 더 넣는다.
   var ACTIVITIES = [
-    { key: "study", name: "본문 정리", mode: "ai", needs: ["translations", "vocab"], instruction: "본문과 해석을 비교하며 읽고 단어를 익히시오." },
+    { key: "vocab", name: "단어 정리", mode: "ai", needs: ["vocab"], instruction: "본문에 나온 단어와 뜻을 먼저 익히시오." },
+    { key: "study", name: "본문 정리", mode: "ai", needs: ["translations"], instruction: "본문과 해석을 비교하며 읽으시오." },
     { key: "translate", name: "해석 쓰기", mode: "ai", needs: ["translations"], instruction: "다음 문장을 우리말로 해석하시오." },
     { key: "lexical", name: "어휘 양자택일", mode: "ai", needs: ["lexical"], instruction: "[ ] 안에서 문맥상 알맞은 낱말을 고르시오." },
     { key: "blank", name: "빈칸 채우기", mode: "ai", needs: ["translations"], instruction: "해석을 참고하여 주어진 첫 글자로 시작하는 알맞은 단어를 빈칸에 쓰시오." },
@@ -18,7 +19,7 @@
     { key: "order", name: "문장 순서 배열", mode: "auto", needs: [], instruction: "주어진 문장 다음에 이어질 글의 순서를 쓰시오." },
     { key: "compose", name: "영작하기", mode: "ai", needs: ["translations"], instruction: "우리말에 맞게 본문의 영어 문장을 쓰시오." }
   ];
-  var DEFAULT_KEYS = ["study", "translate", "lexical", "blank", "grammar", "scramble"];
+  var DEFAULT_KEYS = ["vocab", "study", "translate", "lexical", "blank", "grammar", "scramble"];
   var BY_KEY = {};
   ACTIVITIES.forEach(function (a, i) { a.order = i; BY_KEY[a.key] = a; });
 
@@ -203,10 +204,8 @@
     var lack = missingNeeds(a, [type]);
     if (lack.length) throw new Error("AI 분석(" + lack.join(", ") + ")이 아직 없어요.");
     switch (type) {
-      case "study": return {
-        sentences: sentences.slice(), translations: a.translations.slice(),
-        rows: a.vocab.map(function (v) { return { word: v.word, pos: v.pos || "", meaning: v.meaning }; })
-      };
+      case "vocab": return { rows: a.vocab.map(function (v) { return { word: v.word, pos: v.pos || "", meaning: v.meaning }; }) };
+      case "study": return { sentences: sentences.slice(), translations: a.translations.slice() };
       case "grammar": return makeChoice(sentences, a.grammar, rng);
       case "lexical": return makeChoice(sentences, a.lexical, rng);
       case "blank": return makeBlank(sentences, rng, a);
@@ -325,16 +324,15 @@
     function sentenceBlock(i, text) { return { kind: "choice", runs: [plain(sentMark(i) + " ")].concat(VM.parseRuns(text)) }; }
     function translationBlock(t) { return { kind: "answerLine", runs: [plain(t || "", "explain")] }; }
     switch (item.type) {
+      case "vocab":
+        out.push({ kind: "answerTable", runs: [], span: 1, widths: [7, 33, 10, 50], header: ["번호", "단어", "품사", "뜻"],
+          rows: d.rows.map(function (v, i) { return [String(i + 1), v.word, v.pos, v.meaning]; }) });
+        break;
       case "study":
         d.sentences.forEach(function (s, i) {
           out.push(sentenceBlock(i, s));
           out.push(translationBlock(d.translations[i]));
         });
-        if (d.rows.length) {
-          out.push({ kind: "src", runs: [plain("단어 정리")] });
-          out.push({ kind: "answerTable", runs: [], span: 1, widths: [7, 33, 10, 50], header: ["번호", "단어", "품사", "뜻"],
-            rows: d.rows.map(function (v, i) { return [String(i + 1), v.word, v.pos, v.meaning]; }) });
-        }
         break;
       case "blank":
         d.sentences.forEach(function (s, i) {

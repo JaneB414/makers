@@ -73,7 +73,8 @@
   };
   var PROMPT_PASSAGES = 2; // 수동 요청문 하나에 넣는 지문 수
   var DESC = {
-    study: "출처 + 문장별 본문·해석 + 단어·품사·뜻 표",
+    vocab: "지문마다 단어·품사·뜻 표",
+    study: "출처 + 문장별 본문·해석",
     translate: "영어 문장 보고 해석 쓰기",
     lexical: "[알맞은 낱말 / 반대 낱말] 고르기",
     blank: "문장마다 빈칸(첫 글자 힌트) + 해석",
@@ -82,7 +83,7 @@
     order: "첫 문장 뒤 (A)~(H) 순서 쓰기",
     compose: "해석 보고 영어 문장 쓰기"
   };
-  var STATE_VERSION = 2; // 활동 구성이 바뀌면 올린다. 예전 워크북은 지우고 기본 활동을 다시 고른다.
+  var STATE_VERSION = 3; // 활동 구성이 바뀌면 올린다. 예전 워크북은 지우고 기본 활동을 다시 고른다.
 
   function $(id) { return document.getElementById(id); }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
