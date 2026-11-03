@@ -548,38 +548,46 @@
     renderPrompts(needs, types);
     $("manual").hidden = false;
     // AI 자료가 없어서 빠진 활동은 자료를 불러오면 들어가므로 따로 알리지 않는다.
-    var skippedNow = build(passages, types).filter(function (m) { return m.indexOf("AI 분석") < 0; });
+    var skippedNow = build(passages, types).filter(function (m) { return m.indexOf("AI 자료(") < 0; });
     show($("status"), "warn", buildMessage(skippedNow, ["AI 활동은 자료가 필요한 지문이 " + needs.length + "개 있어 아직 빠져 있어요. 아래 순서대로 자료를 불러오면 워크북을 다시 짜요."]));
   }
 
   // Claude 화면 안에서는 지문마다 한 번씩 Claude에게 바로 요청한다.
+  // Claude 화면 안에서는 지문마다, 자료 묶음(내용 정리·해석·단어 / 구문 분석 / 양자택일)마다 따로 요청한다.
+  // 한 번에 다 요청하면 답변이 길어 잘리기 쉽고, 하나가 실패하면 그 지문의 자료가 모두 빠진다.
   async function runAi(passages, needs, types) {
-    var failed = [];
+    var failed = [], stopped = false;
+    var jobs = [];
+    needs.forEach(function (p) {
+      WB.needGroups(WB.missingNeeds(analysis[p.key], types)).forEach(function (g) { jobs.push({ p: p, group: g }); });
+    });
     $("make").disabled = true;
     $("stop").hidden = false;
-    for (var i = 0; i < needs.length; i++) {
-      var p = needs[i];
+    for (var i = 0; i < jobs.length && !stopped; i++) {
+      var p = jobs[i].p, group = jobs[i].group;
+      var name = p.no ? VM.noLabel(p.no) : "지문";
+      var what = group.map(function (n) { return WB.NEED_LABEL[n]; }).join("·");
       aborter = new AbortController();
-      show($("status"), "", "AI가 워크북 자료(해석·어휘·어법)를 만드는 중이에요 (" + (i + 1) + "/" + needs.length + ": " + (p.no ? VM.noLabel(p.no) : "지문") + "). 하나에 30초~1분쯤 걸려요.");
+      show($("status"), "", "AI가 워크북 자료를 만드는 중이에요 (" + (i + 1) + "/" + jobs.length + ": " + name + " " + what + "). 하나에 30초~1분쯤 걸려요.");
       try {
-        var want = WB.missingNeeds(analysis[p.key], types);
-        var data = await sampleFn.json(WB.buildAnalysisPrompt([{ key: "1", sentences: p.sentences }], want), { signal: aborter.signal });
-        var res = WB.parseAnalysis(data, { "1": p.sentences });
+        var data = await sampleFn.json(WB.buildAnalysisPrompt([{ key: "1", sentences: p.sentences }], group), { signal: aborter.signal });
+        var res = WB.parseAnalysis(data, { "1": p.sentences }, group);
         analysis[p.key] = Object.assign(analysis[p.key] || {}, res.results["1"]);
         saveAnalysis();
-        if (res.warnings.length) failed.push((p.no ? VM.noLabel(p.no) + " " : "") + res.warnings.join(" "));
+        if (res.warnings.length) failed.push(name + " " + res.warnings.map(function (w) { return w.replace(/^지문 1:? ?/, ""); }).join(" "));
       } catch (e) {
-        if (e && e.code === "cancelled") { failed.push("멈췄어요."); break; }
-        if (e && e.code === "not_granted") { failed.push("Claude 사용을 허용하지 않아 AI 자료를 만들지 못했어요. 아래 요청문으로 직접 만들 수 있어요."); showManual(needs.slice(i), types); break; }
-        if (e && e.code === "rate_limited") { failed.push("요청이 많아 잠시 막혔어요. 1~2분 뒤 다시 눌러 주세요."); showManual(needs.slice(i), types); break; }
-        failed.push("[" + (p.no ? VM.noLabel(p.no) : "지문") + "] AI 자료 만들기에 실패했어요" + errorDetail(e) + ".");
-        showManual(needs.slice(i), types);
+        if (e && e.code === "cancelled") { failed.push("멈췄어요."); stopped = true; break; }
+        if (e && e.code === "not_granted") { failed.push("Claude 사용을 허용하지 않아 AI 자료를 만들지 못했어요. 아래 요청문으로 직접 만들 수 있어요."); showManual(needs, types); stopped = true; break; }
+        if (e && e.code === "rate_limited") { failed.push("요청이 많아 잠시 막혔어요. 1~2분 뒤 다시 눌러 주세요."); showManual(needs, types); stopped = true; break; }
+        failed.push("[" + name + " " + what + "] AI 자료 만들기에 실패했어요" + errorDetail(e) + ".");
       }
     }
     aborter = null;
     $("make").disabled = false;
     $("stop").hidden = true;
     var skipped = build(passages, types);
+    var left = needs.filter(function (p) { return WB.missingNeeds(analysis[p.key], types).length; });
+    if (left.length && !stopped) failed.push("‘워크북 만들기’를 한 번 더 누르면 빠진 자료만 다시 요청해요(이미 받은 자료는 그대로 써요).");
     show($("status"), failed.length || skipped.length ? "warn" : "ok", buildMessage(skipped, failed));
     updateTarget();
   }
@@ -594,6 +602,7 @@
     var box = $("prompts");
     box.textContent = "";
     pending.keyMap = {};
+    pending.wanted = [];
     var total = Math.ceil(needs.length / PROMPT_PASSAGES);
     for (var i = 0; i < needs.length; i += PROMPT_PASSAGES) {
       var chunk = needs.slice(i, i + PROMPT_PASSAGES);
@@ -602,6 +611,7 @@
         var key = String(i + k + 1);
         pending.keyMap[key] = p;
         WB.missingNeeds(analysis[p.key], types).forEach(function (n) { if (want.indexOf(n) < 0) want.push(n); });
+        WB.missingNeeds(analysis[p.key], types).forEach(function (n) { if (pending.wanted.indexOf(n) < 0) pending.wanted.push(n); });
         return { key: key, sentences: p.sentences };
       });
       var row = document.createElement("div");
@@ -645,7 +655,7 @@
     try {
       var byKey = {};
       Object.keys(pending.keyMap).forEach(function (k) { byKey[k] = pending.keyMap[k].sentences; });
-      var res = WB.parseAnalysis(text, byKey);
+      var res = WB.parseAnalysis(text, byKey, pending.wanted);
       Object.keys(res.results).forEach(function (k) {
         var p = pending.keyMap[k];
         analysis[p.key] = Object.assign(analysis[p.key] || {}, res.results[k]);
@@ -1046,6 +1056,8 @@
     var saved = loadJson(STATE_KEY);
     var savedLib = loadJson(LIB_KEY);
     analysis = loadJson(ANALYSIS_KEY) || {};
+    var pruned = Object.keys(analysis).reduce(function (n, k) { return n + WB.pruneAnalysis(analysis[k]); }, 0);
+    if (pruned) saveAnalysis();
     if (savedLib && Array.isArray(savedLib.exams)) lib = savedLib;
     else savedLib = null;
     if (saved) {

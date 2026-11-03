@@ -101,8 +101,8 @@ test("워크북 문서: 활동별 구간에 모든 지문을 출처와 함께 �
   [{ exam: "올림포스2 독해의 기본", no: "11강 Practice 3" }, { exam: "올림포스2 독해의 기본", no: "12" }].forEach((src) => {
     WB.ACTIVITIES.forEach((a) => items.push({ id: src.no + a.key, type: a.key, source: src, data: WB.makeActivity(a.key, SENTS, analysis, rng) }));
   });
-  assert.throws(() => WB.makeActivity("translate", SENTS, {}, rng), /AI 분석/);
-  assert.throws(() => WB.makeActivity("blank", SENTS, {}, rng), /AI 분석/);
+  assert.throws(() => WB.makeActivity("translate", SENTS, {}, rng), /AI 자료/);
+  assert.throws(() => WB.makeActivity("blank", SENTS, {}, rng), /AI 자료/);
   const sorted = WB.sortItems(items.slice().reverse(), (s) => (s.no === "12" ? 1 : 0));
   assert.deepStrictEqual(sorted.slice(0, 2).map((i) => i.id), ["11강 Practice 3study", "12study"]);
   assert.deepStrictEqual([...new Set(sorted.map((i) => i.type))], ["study", "syntax", "lexical", "blank", "grammar", "scramble", "order", "compose", "translate"]);
@@ -162,4 +162,38 @@ test("AI 답변 읽기: 내용 정리와 구문 분석에서 지문에 없는 �
   assert.strictEqual(a.syntax.points.length, 1);
   assert.ok(r.warnings.some((w) => /구문 분석/.test(w)));
   assert.strictEqual(WB.flowText(a.summary.flow), "도입 ①~②");
+});
+
+test("AI 구절 찾기: 대소문자·끝 문장부호·따옴표·줄임표가 달라도 지문의 글자 그대로 찾는다", () => {
+  const s = "The ocean covers most of our planet, and it's \"deep\" there.";
+  assert.strictEqual(WB.locate(s, "the ocean"), "The ocean");
+  assert.strictEqual(WB.locate(s, "most of our planet."), "most of our planet");
+  assert.strictEqual(WB.locate(s, "it’s “deep”"), "it's \"deep\"");
+  assert.strictEqual(WB.locate(s, "covers ... planet"), "covers most of our planet");
+  assert.strictEqual(WB.locate(s, "cover"), ""); // 낱말 일부는 찾지 않는다
+  assert.strictEqual(WB.locate(s, "moon"), "");
+});
+
+test("AI 답변 읽기: 비어 있는 항목은 받지 않은 것으로 두고, 빠진 항목을 알려 준다", () => {
+  const reply = JSON.stringify({ passages: [{ key: "1",
+    summary: { gist: "", title: "" }, translations: ["", ""], vocab: [],
+    syntax: { marks: [], points: [] }, grammar: [{ s: 1, answer: "없는낱말", wrong: "x" }]
+  }] });
+  const r = WB.parseAnalysis(reply, { "1": SENTS }, ["summary", "translations", "vocab", "syntax", "grammar", "lexical"]);
+  assert.deepStrictEqual(Object.keys(r.results["1"]), []);
+  // 그래서 다시 만들 때 모두 다시 요청한다.
+  assert.deepStrictEqual(WB.missingNeeds(r.results["1"], ["study", "syntax", "grammar", "lexical"]), ["summary", "translations", "vocab", "syntax", "grammar", "lexical"]);
+  assert.ok(r.warnings.some((w) => /내용 정리·해석·단어·구문 분석·어법 양자택일·어휘 양자택일 자료가 비어 있거나 빠져서/.test(w)));
+});
+
+test("요청 묶음: 지문 하나의 자료를 세 번에 나눠 요청한다", () => {
+  assert.deepStrictEqual(WB.needGroups(["lexical", "syntax", "summary", "translations", "vocab", "grammar"]),
+    [["summary", "translations", "vocab"], ["syntax"], ["grammar", "lexical"]]);
+  assert.deepStrictEqual(WB.needGroups(["syntax"]), [["syntax"]]);
+});
+
+test("예전 자료 정리: 빈 내용 정리·구문 분석·빈 목록은 지워 다시 요청하게 한다", () => {
+  const a = { summary: { gist: "", title: "T" }, syntax: { marks: [], points: [] }, translations: ["", ""], vocab: [], grammar: [{ s: 1 }] };
+  assert.strictEqual(WB.pruneAnalysis(a), 4);
+  assert.deepStrictEqual(Object.keys(a), ["grammar"]);
 });

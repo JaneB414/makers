@@ -37,6 +37,19 @@
     return h.toString(36) + "-" + sentences.length;
   }
 
+  // 예전에 저장한 자료 중 쓸 만한 내용이 없는 항목(빈 요지, 핵심 구문 없는 구문 분석, 빈 목록)을 지운다.
+  // 지워 두면 '아직 없는 자료'가 되어 워크북을 다시 만들 때 그 항목만 다시 요청한다. 지운 항목 수를 돌려준다.
+  function pruneAnalysis(a) {
+    var removed = 0;
+    function drop(k) { delete a[k]; removed++; }
+    if (!a || typeof a !== "object") return 0;
+    if (a.summary && !(a.summary.gist && a.summary.title)) drop("summary");
+    if (a.syntax && !(a.syntax.points && a.syntax.points.length && a.syntax.marks)) drop("syntax");
+    if (a.translations && !a.translations.some(Boolean)) drop("translations");
+    ["vocab", "grammar", "lexical"].forEach(function (k) { if (a[k] && !a[k].length) drop(k); });
+    return removed;
+  }
+
   // 고른 활동에 필요한 분석 항목 중 아직 없는 것
   function missingNeeds(analysis, types) {
     var out = [];
@@ -60,6 +73,38 @@
     var m;
     while ((m = re.exec(sentence)) !== null) out.push({ start: m.index, end: m.index + m[0].length });
     return out;
+  }
+
+  // AI가 적은 구절을 문장에서 찾아, 문장에 실제로 있는 글자 그대로 돌려준다(못 찾으면 "").
+  // AI는 대소문자, 끝 문장부호, 따옴표·대시 모양, 띄어쓰기를 조금씩 다르게 적곤 하고, 긴 구절은 "A ... B"처럼 줄여 적기도 한다.
+  function looseRe(phrase) {
+    var out = "";
+    for (var i = 0; i < phrase.length; i++) {
+      var c = phrase[i];
+      if (/\s/.test(c)) { while (i + 1 < phrase.length && /\s/.test(phrase[i + 1])) i++; out += "\\s+"; }
+      else if ("'‘’".indexOf(c) >= 0) out += "['‘’]";
+      else if ('"“”'.indexOf(c) >= 0) out += '["“”]';
+      else if ("-–—".indexOf(c) >= 0) out += "[-–—]";
+      else out += escapeRe(c);
+    }
+    return out;
+  }
+
+  function locate(sentence, phrase) {
+    var raw = String(phrase == null ? "" : phrase).trim();
+    // 적힌 그대로 먼저, 안 되면 앞뒤 문장부호·따옴표를 떼고 찾는다.
+    var tries = [raw.replace(/[.,;:!?]+$/, ""), raw.replace(/^["'“‘(\[]+|[.,;:!?"'”’)\]]+$/g, "").trim()];
+    var gap = /\s*(?:\.\.\.|…|~)\s*/;
+    for (var t = 0; t < tries.length; t++) {
+      var parts = tries[t].split(gap).filter(Boolean);
+      if (!parts.length) continue;
+      for (var f = 0; f < 2; f++) {
+        var re = new RegExp("(?<![A-Za-z])" + parts.map(looseRe).join("[\\s\\S]*?") + "(?![A-Za-z])", f ? "i" : "");
+        var m = re.exec(sentence);
+        if (m) return m[0];
+      }
+    }
+    return "";
   }
 
   var STOPWORDS = ("about above across after again against along already also although always among another anyone anything around because become becomes been before behind being below between beyond both cannot could didn't doesn't during either enough especially even every everyone everything example first former however instead itself just later latter least less little many might more most much must myself neither never nothing often other others otherwise ourselves perhaps rather really same seems several should since something sometimes still such than that their theirs them themselves then there therefore these they thing things this those though through thus together toward towards under unless until upon very what whatever when whenever where whether which while whom whose will with within without would yourself people").split(" ");
@@ -201,7 +246,7 @@
   function makeActivity(type, sentences, analysis, rng) {
     var a = analysis || {};
     var lack = missingNeeds(a, [type]);
-    if (lack.length) throw new Error("AI 분석(" + lack.join(", ") + ")이 아직 없어요.");
+    if (lack.length) throw new Error("AI 자료(" + lack.map(function (n) { return NEED_LABEL[n]; }).join("·") + ")가 아직 없어요.");
     switch (type) {
       case "study": return {
         summary: a.summary, sentences: sentences.slice(), translations: a.translations.slice(),
@@ -230,6 +275,15 @@
     lexical: '"lexical": 어휘 양자택일(문맥상 알맞은 낱말 고르기) 10~14개(문장마다 1~2개). 각 항목은 {"s": 문장 번호, "answer": 지문에 실제로 쓰인 낱말(1단어, 글자 그대로), "wrong": 문맥에 맞지 않는 낱말(반의어나 철자·뜻이 비슷한 낱말), "point": 고르는 근거 한 줄(우리말)}. 글의 흐름을 이해해야 고를 수 있는 내용어를 고른다.'
   };
   var NEED_ORDER = ["summary", "translations", "vocab", "syntax", "grammar", "lexical"];
+  var NEED_LABEL = { summary: "내용 정리", translations: "해석", vocab: "단어", syntax: "구문 분석", grammar: "어법 양자택일", lexical: "어휘 양자택일" };
+  // 한 번에 다 요청하면 답변이 길어 중간에 잘리기 쉽다. 지문 하나를 이 묶음으로 나눠 따로 요청한다.
+  var NEED_GROUPS = [["summary", "translations", "vocab"], ["syntax"], ["grammar", "lexical"]];
+
+  // 빠진 항목(want)을 요청 묶음으로 나눈다.
+  function needGroups(want) {
+    return NEED_GROUPS.map(function (g) { return g.filter(function (n) { return want.indexOf(n) >= 0; }); })
+      .filter(function (g) { return g.length; });
+  }
 
   // passages: [{key, sentences}], needs: 만들 항목
   function buildAnalysisPrompt(passages, needs) {
@@ -247,16 +301,19 @@
     lines.push("지문마다 다음 항목을 만든다.");
     needs.forEach(function (n) { lines.push("- " + NEED_GUIDE[n]); });
     lines.push("");
-    lines.push("지문에서 가져오는 낱말(form, answer)은 지문의 글자와 한 글자도 다르지 않게 쓴다.");
+    lines.push("지문에서 가져오는 낱말·구절(form, answer, subjects, verbs, phrase)은 지문에서 복사해 붙인 것처럼 대소문자까지 한 글자도 다르지 않게 쓰고, \"...\"로 줄이지 않는다.");
+    lines.push("요청한 항목은 하나도 빠뜨리지 말고 모두 채운다.");
     var example = { key: passages[0] ? passages[0].key : "1" };
     needs.forEach(function (n) { example[n] = []; });
     lines.push("다른 말 없이 JSON 하나만 답한다. 형식: " + JSON.stringify({ passages: [example] }));
     return lines.join("\n");
   }
 
-  // AI 답변을 읽는다. sentencesByKey: {key: 문장 목록}
-  // 돌려주는 값: {results: {key: {translations?, vocab?, grammar?, lexical?}}, warnings}
-  function parseAnalysis(text, sentencesByKey) {
+  // AI 답변을 읽는다. sentencesByKey: {key: 문장 목록}, wanted: 요청한 항목(있으면 빠진 항목을 알려 준다)
+  // 쓸 만한 내용이 없는 항목(빈 요지, 핵심 구문 없는 구문 분석 등)은 결과에 넣지 않는다.
+  // 그래야 '아직 없는 자료'로 남아 워크북을 다시 만들 때 그 항목만 다시 요청한다.
+  // 돌려주는 값: {results: {key: {summary?, translations?, vocab?, syntax?, grammar?, lexical?}}, warnings}
+  function parseAnalysis(text, sentencesByKey, wanted) {
     var list = [];
     VM.extractJsonAll(text).forEach(function (data) {
       if (Array.isArray(data.passages)) list = list.concat(data.passages);
@@ -273,16 +330,17 @@
       var out = {};
       if (Array.isArray(raw.translations)) {
         var tr = raw.translations.map(function (t) { return String(t == null ? "" : t).trim(); });
-        if (tr.length !== sents.length) warnings.push(label + ": 해석이 " + tr.length + "개예요(문장 " + sents.length + "개). 빠진 해석은 비워 두었어요.");
-        out.translations = sents.map(function (_, i) { return tr[i] || ""; });
+        if (tr.some(Boolean)) {
+          if (tr.length !== sents.length) warnings.push(label + ": 해석이 " + tr.length + "개예요(문장 " + sents.length + "개). 빠진 해석은 비워 두었어요.");
+          out.translations = sents.map(function (_, i) { return tr[i] || ""; });
+        }
       }
       if (Array.isArray(raw.vocab)) {
         var whole = sents.join(" ");
-        out.vocab = raw.vocab.filter(function (v) { return v && v.word && v.meaning; }).map(function (v) {
-          var form = v.form && findAll(whole, String(v.form), false).length ? String(v.form) : "";
-          return { word: String(v.word).trim(), form: form, pos: String(v.pos || "").trim(), meaning: String(v.meaning).trim() };
+        var vocab = raw.vocab.filter(function (v) { return v && v.word && v.meaning; }).map(function (v) {
+          return { word: String(v.word).trim(), form: locate(whole, v.form), pos: String(v.pos || "").trim(), meaning: String(v.meaning).trim() };
         });
-        if (!out.vocab.length) warnings.push(label + ": 어휘 목록이 비어 있어요.");
+        if (vocab.length) out.vocab = vocab;
       }
       if (raw.summary && typeof raw.summary === "object") {
         var sm = raw.summary;
@@ -295,7 +353,7 @@
             return { part: str(f.part), from: from, to: to >= from && to <= sents.length ? to : from };
           }).filter(Boolean)
         };
-        if (!out.summary.gist || !out.summary.title) warnings.push(label + ": 내용 정리(요지·제목)가 비어 있어요.");
+        if (!out.summary.gist || !out.summary.title) delete out.summary;
       }
       if (raw.syntax && typeof raw.syntax === "object") {
         var syn = raw.syntax, lost = 0;
@@ -306,41 +364,50 @@
           if (!(i >= 0 && i < sents.length)) return;
           ["subjects", "verbs"].forEach(function (f) {
             (Array.isArray(m[f]) ? m[f] : []).forEach(function (t) {
-              t = String(t).trim();
-              if (t && findAll(sents[i], t, false).length) marks[i][f].push(t);
-              else if (t) lost++;
+              var at = locate(sents[i], t);
+              if (at) marks[i][f].push(at);
+              else if (String(t).trim()) lost++;
             });
           });
         });
         var points = (Array.isArray(syn.points) ? syn.points : []).map(function (pt) {
-          var i = parseInt(pt && pt.s, 10) - 1, phrase = String((pt && pt.phrase) || "").trim();
-          if (!(i >= 0 && i < sents.length) || !phrase || !pt.note || !findAll(sents[i], phrase, false).length) { lost++; return null; }
+          if (!pt || !pt.note) { lost++; return null; }
+          var i = parseInt(pt.s, 10) - 1, phrase = i >= 0 && i < sents.length ? locate(sents[i], pt.phrase) : "";
+          // 문장 번호가 틀렸으면 그 구절이 있는 다른 문장을 찾는다.
+          for (var k = 0; k < sents.length && !phrase; k++) { phrase = locate(sents[k], pt.phrase); if (phrase) i = k; }
+          if (!phrase) { lost++; return null; }
           return { s: i + 1, phrase: phrase, note: String(pt.note).trim() };
-        }).filter(Boolean);
-        out.syntax = { marks: marks, points: points };
+        }).filter(Boolean).sort(function (a, b) { return a.s - b.s; });
         if (lost) warnings.push(label + " 구문 분석: 지문에서 찾지 못한 표시 " + lost + "개는 뺐어요.");
-        if (!points.length) warnings.push(label + ": 구문 분석의 핵심 구문이 비어 있어요.");
+        if (points.length) out.syntax = { marks: marks, points: points };
       }
       ["grammar", "lexical"].forEach(function (field) {
         if (!Array.isArray(raw[field])) return;
         var dropped = 0;
-        out[field] = raw[field].map(function (it) {
+        var items = raw[field].map(function (it) {
           if (!it || !it.answer || !it.wrong) return null;
-          var answer = String(it.answer).trim(), wrong = String(it.wrong).trim();
-          if (answer.toLowerCase() === wrong.toLowerCase()) return null;
+          var wrong = String(it.wrong).trim();
           var s = parseInt(it.s, 10);
+          var answer = s >= 1 && s <= sents.length ? locate(sents[s - 1], it.answer) : "";
           // 문장 번호가 틀렸으면 그 낱말이 있는 다른 문장을 찾는다.
-          if (!(s >= 1 && s <= sents.length && findAll(sents[s - 1], answer, false).length)) {
-            s = 0;
-            for (var i = 0; i < sents.length && !s; i++) if (findAll(sents[i], answer, false).length) s = i + 1;
-          }
-          return s ? { s: s, answer: answer, wrong: wrong, point: String(it.point || "").trim() } : null;
+          for (var i = 0; i < sents.length && !answer; i++) { answer = locate(sents[i], it.answer); if (answer) s = i + 1; }
+          if (!answer || answer.toLowerCase() === wrong.toLowerCase()) return null;
+          return { s: s, answer: answer, wrong: wrong, point: String(it.point || "").trim() };
         }).filter(function (it) { if (!it) dropped++; return it; });
-        if (dropped) warnings.push(label + " " + (field === "grammar" ? "어법" : "어휘") + " 양자택일: 지문에서 찾지 못한 " + dropped + "개는 뺐어요.");
+        if (dropped) warnings.push(label + " " + NEED_LABEL[field] + ": 지문에서 찾지 못한 " + dropped + "개는 뺐어요.");
+        if (items.length) out[field] = items;
       });
       results[key] = out;
     });
     if (!Object.keys(results).length) throw new Error("답변의 지문 번호(key)가 요청문과 맞지 않아요.");
+    // 요청했는데 쓸 만한 내용이 오지 않은 항목을 지문마다 알려 준다.
+    if (wanted && wanted.length) {
+      keys.forEach(function (key) {
+        var got = results[key] || {};
+        var miss = wanted.filter(function (n) { return !got[n]; }).map(function (n) { return NEED_LABEL[n]; });
+        if (miss.length) warnings.push("지문 " + key + ": " + miss.join("·") + " 자료가 비어 있거나 빠져서 받지 못했어요.");
+      });
+    }
     return { results: results, warnings: warnings };
   }
 
@@ -583,7 +650,11 @@
     pointMark: pointMark,
     flowText: flowText,
     passageKey: passageKey,
+    locate: locate,
+    needGroups: needGroups,
+    NEED_LABEL: NEED_LABEL,
     missingNeeds: missingNeeds,
+    pruneAnalysis: pruneAnalysis,
     findAll: findAll,
     makeBlank: makeBlank,
     makeOrder: makeOrder,
