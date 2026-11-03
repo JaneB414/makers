@@ -55,8 +55,10 @@ def main(wheel):
     files = load_skeleton(wheel)
     h = files["Contents/header.xml"]
 
-    # 글꼴: 한글은 함초롬돋움(0)·함초롬바탕(1), 영어는 Times New Roman
-    h, tnr = add_font(h, "LATIN", "Times New Roman", "FCAT_MYUNGJO")
+    # 글꼴: 한글·영어 모두 나눔고딕(SIL OFL) 하나만 쓴다. 틀에 있던 글꼴 자리(0, 1)의 이름을 바꾸고,
+    # 영어 글꼴 자리도 나눔고딕으로 하나 더 둔다(글자 모양의 글꼴 번호를 그대로 쓰기 위해).
+    h = h.replace('face="함초롬돋움"', 'face="나눔고딕"').replace('face="함초롬바탕"', 'face="나눔고딕"')
+    h, tnr = add_font(h, "LATIN", "나눔고딕", "FCAT_GOTHIC")
     DOTUM, BATANG = 0, 1
 
     cp0 = re.search(r'<hh:charPr id="0".*?</hh:charPr>', h, re.S).group(0)
@@ -109,7 +111,7 @@ def main(wheel):
         char("cell" + suffix, 9.5, BATANG, b, u)
         char("hl" + suffix, 9.5, BATANG, b, u, shade=HIGHLIGHT)
     char("cellKo", 8.5, BATANG, color="#333333")
-    char("pn", 7.5, DOTUM, bold=True, color=POINT_RED)
+    char("pn", 9, DOTUM, color=POINT_RED)
     char("lbl", 8.5, DOTUM, bold=True, color=GRAY)
     h = add_items(h, "charProperties", char_items)
 

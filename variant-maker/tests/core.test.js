@@ -363,7 +363,8 @@ test("HWPX: mimetype이 맨 앞·무압축이고 본문·머리말·쪽 번호·
   assert.ok(text.includes('colCount="2"') && text.includes("<hp:colLine"), "2단과 구분선");
   assert.ok(text.includes("<hp:header") && text.includes("<hp:t>행복학원</hp:t>"), "머리말");
   assert.ok(text.includes('numType="PAGE"'), "쪽 번호");
-  assert.ok(text.includes('face="Times New Roman"'), "영어 글꼴");
+  // 글꼴은 나눔고딕 하나만 쓴다.
+  assert.deepStrictEqual([...new Set(text.match(/face="[^"]+"/g))], ['face="나눔고딕"'], "글꼴");
   assert.ok(text.includes('pageBreak="1"'), "정답지는 새 쪽에서 시작");
 });
 
@@ -409,7 +410,9 @@ test("DOCX: 필요한 부분이 들어 있고 상자·밑줄·2단·머리말·�
   const text = Buffer.from(VM.buildDocx(Object.assign({}, DOC, { problems }))).toString("utf8");
   for (const part of ["[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/styles.xml", "word/header1.xml", "word/footer1.xml"]) assert.ok(text.includes(part), part);
   assert.ok(text.includes('w:instr="PAGE"'), "쪽 번호");
-  assert.ok(text.includes('w:ascii="Times New Roman"'), "영어 글꼴");
+  // 글꼴은 나눔고딕 하나만 쓴다(문서 기본값 포함).
+  const fonts = new Set((text.match(/<w:rFonts [^>]*>/g) || []).flatMap((tag) => tag.match(/="[^"]+"/g)).map((m) => m.slice(1)));
+  assert.deepStrictEqual([...fonts], ['"나눔고딕"'], "글꼴");
   assert.ok(text.includes("어법 &amp; &lt;테스트&gt;"));
   assert.ok(text.includes('<w:u w:val="single"/></w:rPr><w:t xml:space="preserve">①go</w:t>'));
   assert.ok(text.includes('w:fill="EEF2F8"'), "상자");

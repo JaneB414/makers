@@ -1352,7 +1352,8 @@
   // ---------- DOCX (한글에서도 바로 열리는 Word 문서) ----------
 
   var NAVY = "1D3A6B";
-  var DOTUM = "함초롬돋움", BATANG = "함초롬바탕", EN = "Times New Roman";
+  // 모든 글자(한글·영어·숫자)를 나눔고딕 하나로 쓴다. 굵기·크기·색으로만 구분한다.
+  var DOTUM = "나눔고딕", BATANG = "나눔고딕", EN = "나눔고딕";
 
   // 글자 모양: [한글 글꼴, 크기(pt), 굵게, 색]
   var DOCX_CHAR = {
@@ -1362,7 +1363,7 @@
     tag: [DOTUM, 8, true, NAVY, "E3EAF5"], typeHead: [DOTUM, 10.5, true, NAVY], typeRange: [DOTUM, 8, false, "6B7688"],
     gridNum: [DOTUM, 8.5, false, "333333"], gridAns: [BATANG, 9.5],
     cell: [BATANG, 9.5], hl: [BATANG, 9.5, false, null, "FFF1A8"], cellKo: [BATANG, 8.5, false, "333333"],
-    pn: [DOTUM, 7.5, true, "B04A3A"], lbl: [DOTUM, 8.5, true, "6B7688"]
+    pn: [DOTUM, 9, false, "B04A3A"], lbl: [DOTUM, 8.5, true, "6B7688"]
   };
 
   // 문단 모양 (단위: twip, 1mm ≈ 56.7)
@@ -1508,7 +1509,7 @@
 
   var DOCX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
-    '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="함초롬바탕" w:cs="Times New Roman"/><w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="en-US" w:eastAsia="ko-KR"/></w:rPr></w:rPrDefault>' +
+    '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="나눔고딕" w:hAnsi="나눔고딕" w:eastAsia="나눔고딕" w:cs="나눔고딕"/><w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="en-US" w:eastAsia="ko-KR"/></w:rPr></w:rPrDefault>' +
     '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="384" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
     '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>';
 

@@ -23,10 +23,11 @@
   --col-rule: #c9d1de;
   --tag-fill: #e3eaf5;
   --foot-gray: #555555;
-  --en: "Times New Roman", Times, "Liberation Serif", "Nimbus Roman", serif;
-  --kr-serif: "Noto Serif KR", "함초롬바탕", "HCR Batang", "Batang", serif;
-  --kr-sans: "IBM Plex Sans KR", "함초롬돋움", "HCR Dotum", "Malgun Gothic", sans-serif;
-  --ui: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  /* 저작권 걱정 없이 쓰도록 화면·문서 모두 나눔고딕(SIL OFL) 하나만 쓴다. */
+  --en: "Nanum Gothic", "NanumGothic", "나눔고딕", sans-serif;
+  --kr-serif: "Nanum Gothic", "NanumGothic", "나눔고딕", sans-serif;
+  --kr-sans: "Nanum Gothic", "NanumGothic", "나눔고딕", sans-serif;
+  --ui: "Nanum Gothic", "NanumGothic", "나눔고딕", sans-serif;
   --radius: 6px;
 }
 @media (prefers-color-scheme: dark) {
@@ -99,7 +100,7 @@ details .sub { display: grid; gap: 8px; margin-top: 8px; }
 .pick-group[open] { padding-bottom: 10px; }
 .pick-group > summary { display: flex; align-items: center; gap: 8px; color: var(--fg); font-weight: 600; list-style: none; }
 .pick-group > summary::-webkit-details-marker { display: none; }
-.pick-group > summary::before { content: "▸"; color: var(--muted); font-size: 12px; }
+.pick-group > summary::before { content: "▶"; font-size: 9px; color: var(--muted); font-size: 12px; }
 .pick-group[open] > summary::before { content: "▾"; }
 .pick-group > summary .n { font-weight: 400; color: var(--muted); font-size: 12.5px; }
 .pick-group .chips { margin-top: 8px; }
