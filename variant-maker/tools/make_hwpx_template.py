@@ -111,7 +111,7 @@ def main(wheel):
         char("cell" + suffix, 9.5, BATANG, b, u)
         char("hl" + suffix, 9.5, BATANG, b, u, shade=HIGHLIGHT)
     char("cellKo", 8.5, BATANG, color="#333333")
-    char("pn", 9, DOTUM, color=POINT_RED)
+    char("pn", 8, DOTUM, bold=True, color="#FFFFFF", shade=POINT_RED)  # 구문 분석 번호: 빨간 바탕 흰 숫자
     char("lbl", 8.5, DOTUM, bold=True, color=GRAY)
     h = add_items(h, "charProperties", char_items)
 

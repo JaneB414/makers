@@ -1363,7 +1363,7 @@
     tag: [DOTUM, 8, true, NAVY, "E3EAF5"], typeHead: [DOTUM, 10.5, true, NAVY], typeRange: [DOTUM, 8, false, "6B7688"],
     gridNum: [DOTUM, 8.5, false, "333333"], gridAns: [BATANG, 9.5],
     cell: [BATANG, 9.5], hl: [BATANG, 9.5, false, null, "FFF1A8"], cellKo: [BATANG, 8.5, false, "333333"],
-    pn: [DOTUM, 9, false, "B04A3A"], lbl: [DOTUM, 8.5, true, "6B7688"]
+    pn: [DOTUM, 8, true, "FFFFFF", "B04A3A"], lbl: [DOTUM, 8.5, true, "6B7688"]
   };
 
   // 문단 모양 (단위: twip, 1mm ≈ 56.7)

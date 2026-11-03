@@ -18,7 +18,7 @@
 .page .answer-table.wb-rich th { font-weight: 700; color: var(--navy); }
 .page .r-cellKo { font-size: 11.33px; color: #333; }
 .page .r-hl { background: #fff1a8; }
-.page .r-pn { font: 400 12px var(--kr-sans); color: #b04a3a; vertical-align: 1px; margin-left: 1px; }
+.page .r-pn { font: 700 10.67px/1.3 var(--kr-sans); color: #fff; background: #b04a3a; border-radius: 2px; margin-left: 2px; vertical-align: 1px; white-space: nowrap; }
 .page .r-lbl { font: 700 11.33px var(--kr-sans); color: var(--src-gray); }
 .page .k-typeHead .r-typeHead + .r-typeHead { color: var(--ink); }
 /* 지문 하나가 한 쪽에 들어가도록 촘촘하게 */
@@ -27,3 +27,7 @@
 .page .r-cellKo { font-size: 11px; }
 .page .answer-table.wb-table td { height: 21px; padding: 1px 4px; font-size: 12px; line-height: 1.3; }
 .page .k-typeHead + .k-src { margin-top: 8px; }
+/* 번호 바탕 숫자: 문단의 내어쓰기(text-indent)를 물려받으면 숫자가 잘린다 */
+.page .r-tag, .page .r-pn { text-indent: 0; }
+.page .r-tag { margin-left: 0; }
+.page .answer-table.wb-rich td p { padding-left: 1.9em; text-indent: -1.9em; }

@@ -25,9 +25,12 @@
   var BY_KEY = {};
   ACTIVITIES.forEach(function (a, i) { a.order = i; BY_KEY[a.key] = a; });
 
-  // 문장 번호: ①~⑳, 그 뒤는 (21)
-  var SENT_MARKS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳".split("");
-  function sentMark(i) { return SENT_MARKS[i] || "(" + (i + 1) + ")"; }
+  // 문장 번호와 구문 분석 번호는 동그라미 숫자 기호(①, ❶)를 쓰지 않고 바탕색을 칠한 숫자로 쓴다.
+  // 나눔고딕의 동그라미 숫자는 ①~⑨, ⑩~⑳, ❶~❿, ⓫~⓴의 크기가 서로 다르고 ㉚·⓴ 뒤로는 없어서, 번호마다 모양이 들쭉날쭉해진다.
+  // 바탕색 숫자는 한글·Word의 글자 음영으로도 똑같이 나온다.
+  function badge(n) { return "\u00a0" + n + "\u00a0"; }
+  // 문장 번호 run: 연한 남색 바탕에 남색 굵은 숫자(유형 꼬리표와 같은 모양) + 뒤 공백
+  function sentRuns(i, role) { return [{ text: badge(i + 1), u: false, b: false, role: "tag" }, plain(" ", role)]; }
 
   // ---------- 분석 보관 ----------
 
@@ -273,7 +276,7 @@
     summary: '"summary": 지문 내용 정리. {"gist": 요지(우리말 한 문장), "topic": 주제(영어 명사구), "topicKo": 주제의 우리말, "title": 제목(영어, 각 단어 첫 글자 대문자), "titleKo": 제목의 우리말, "flow": 글의 흐름 3~6단계 [{"part": 단계 이름(예: 통념, 반박, 예시, 원리, 결론, 문제 제기, 해결책), "from": 시작 문장 번호, "to": 끝 문장 번호}]}. flow는 1번 문장부터 마지막 문장까지 빠짐없이 이어지게 나눈다.',
     translations: '"translations": 문장마다 우리말 해석 하나씩. 개수는 그 지문의 문장 수와 꼭 같게, 번호 순서대로. 영어 구조가 보이도록 직역에 가깝게 하되 자연스러운 우리말로 쓴다.',
     vocab: '"vocab": 고2~고3 학생이 꼭 알아야 할 단어·숙어 14~18개를 지문에 나온 순서대로. 각 항목은 {"word": 사전에 싣는 기본형(숙어는 원형), "form": 지문에 나온 그대로의 형태(대소문자까지 똑같이), "pos": "n." "v." "a." "ad." "prep." "conj." "phr." 중 하나, "meaning": 이 지문 문맥의 우리말 뜻(쉼표로 2개까지)}. a, the, is 같은 쉬운 낱말은 넣지 않는다.',
-    syntax: '"syntax": 구문 분석. {"marks": 문장마다 {"s": 문장 번호, "subjects": 주어(수식어 포함, 지문 글자 그대로) 목록, "verbs": 본동사(조동사·부정어 포함, 지문 글자 그대로) 목록}, "points": 핵심 구문 [{"s": 문장 번호, "phrase": 형광펜을 칠할 부분(지문 글자 그대로 1~8단어), "note": 설명 한 줄}]}. marks는 모든 문장에 하나씩, 대등절이면 주어·동사를 여러 개 쓴다. points는 문장마다 1~3개, 문장 안에서 나오는 순서대로, 서로 겹치지 않게 고른다. note는 짧게, 무엇을 꾸미는지는 화살표로 쓴다(예: "과거분사구 → a rare gift 수식", "that절(명사절) → believe의 목적어", "주어 a designer에 수일치 → 단수 동사", "tend to + 동사원형: ~하는 경향이 있다").',
+    syntax: '"syntax": 구문 분석. {"marks": 문장마다 {"s": 문장 번호, "subjects": 주어(수식어 포함, 지문 글자 그대로) 목록, "verbs": 본동사(조동사·부정어 포함, 지문 글자 그대로) 목록}, "points": 핵심 구문 [{"s": 문장 번호, "phrase": 형광펜을 칠할 부분(지문 글자 그대로 1~8단어), "note": 설명 한 줄}]}. marks는 모든 문장에 하나씩, 대등절이면 주어·동사를 여러 개 쓴다. points는 문장마다 1~2개, 문장 안에서 나오는 순서대로, 서로 겹치지 않게 고른다. note는 짧게, 무엇을 꾸미는지는 화살표로 쓴다(예: "과거분사구 → a rare gift 수식", "that절(명사절) → believe의 목적어", "주어 a designer에 수일치 → 단수 동사", "tend to + 동사원형: ~하는 경향이 있다").',
     grammar: '"grammar": 어법 양자택일 10~14개(문장마다 1~2개). 각 항목은 {"s": 문장 번호, "answer": 지문에 실제로 쓰인 형태(지문에서 글자 그대로 찾을 수 있는 1~3단어), "wrong": 학생이 헷갈릴 만한 틀린 형태, "point": 출제 포인트 한 줄(우리말)}. 한 문장에 2개까지, 지문 전체에 고르게 둔다. 포인트: 멀리 떨어진 주어-동사 수일치, 본동사 vs 준동사, 능동 vs 수동, 현재분사 vs 과거분사, 관계대명사 that/what/which, 관계대명사 vs 관계부사, 병렬 구조, 대명사의 수·재귀대명사, 형용사 vs 부사, to부정사 vs 동명사, 도치 등. 조동사 뒤 동사원형, 철자처럼 너무 쉬운 포인트는 쓰지 않는다.',
     lexical: '"lexical": 어휘 양자택일(문맥상 알맞은 낱말 고르기) 10~14개(문장마다 1~2개). 각 항목은 {"s": 문장 번호, "answer": 지문에 실제로 쓰인 낱말(1단어, 글자 그대로), "wrong": 문맥에 맞지 않는 낱말(반의어나 철자·뜻이 비슷한 낱말), "point": 고르는 근거 한 줄(우리말)}. 글의 흐름을 이해해야 고를 수 있는 내용어를 고른다.'
   };
@@ -474,13 +477,12 @@
     return (src.exam ? src.exam + " " : "") + VM.noLabel(src.no);
   }
 
-  // 구문 분석 번호: 지문 하나 안에서 ❶부터 이어서 센다.
-  var POINT_MARKS = "❶❷❸❹❺❻❼❽❾❿⓫⓬⓭⓮⓯⓰⓱⓲⓳⓴".split("");
-  function pointMark(i) { return POINT_MARKS[i] || "(" + (i + 1) + ")"; }
+  // 구문 분석 번호: 지문 하나 안에서 1부터 이어서 센다. 빨간 바탕에 흰 숫자.
+  function pointRun(i) { return { text: badge(i + 1), u: false, b: false, role: "pn" }; }
 
   // 글의 흐름: "통념 ① → 반박 ②~③ → …"
   function flowText(flow) {
-    return flow.map(function (f) { return f.part + " " + sentMark(f.from - 1) + (f.to > f.from ? "~" + sentMark(f.to - 1) : ""); }).join(" → ");
+    return flow.map(function (f) { return f.part + " (" + f.from + (f.to > f.from ? "~" + f.to : "") + ")"; }).join(" → ");
   }
 
   // 지문 정리 한 쪽: 지문 제목 → 내용 정리 → 본문|해석 → 단어 정리
@@ -497,7 +499,7 @@
     }
     out.push({ kind: "richTable", runs: [], span: 1, widths: [1, 1], header: ["본문", "해석"],
       rows: d.sentences.map(function (s, i) {
-        return [[[plain(sentMark(i) + " ", "cell"), plain(s, "cell")]], [[plain(sentMark(i) + " ", "cellKo"), plain(d.translations[i] || "", "cellKo")]]];
+        return [[sentRuns(i, "cell").concat(plain(s, "cell"))], [sentRuns(i, "cellKo").concat(plain(d.translations[i] || "", "cellKo"))]];
       }) });
     if (d.rows.length) {
       // 단어 정리는 두 칸으로 나눠 한 쪽에 들어가게 한다.
@@ -535,15 +537,15 @@
         })[0];
         if (!at) return;
         for (var y = at.start; y < at.end; y++) hl[y] = n;
-        notes.push([plain(pointMark(n) + " ", "pn"), plain(pt.note, "cell")]);
+        notes.push([pointRun(n), plain(" " + pt.note, "cell")]);
         n++;
       });
-      var runs = [plain(sentMark(i) + " ", "cell")], x0 = 0;
+      var runs = sentRuns(i, "cell"), x0 = 0;
       while (x0 < L) {
         var x1 = x0;
         while (x1 < L && u[x1] === u[x0] && b[x1] === b[x0] && hl[x1] === hl[x0]) x1++;
         runs.push({ text: s.slice(x0, x1), u: u[x0], b: b[x0], role: hl[x0] >= 0 ? "hl" : "cell" });
-        if (hl[x0] >= 0 && (x1 === L || hl[x1] !== hl[x0])) runs.push(plain(pointMark(hl[x0]), "pn"));
+        if (hl[x0] >= 0 && (x1 === L || hl[x1] !== hl[x0])) runs.push(pointRun(hl[x0]));
         x0 = x1;
       }
       return [[runs], notes];
@@ -554,7 +556,7 @@
   function activityBlocks(item, columns) {
     var d = item.data, out = [];
     var line = writeLine(columns);
-    function sentenceBlock(i, text) { return { kind: "choice", runs: [plain(sentMark(i) + " ")].concat(VM.parseRuns(text)) }; }
+    function sentenceBlock(i, text) { return { kind: "choice", runs: sentRuns(i).concat(VM.parseRuns(text)) }; }
     function translationBlock(t) { return { kind: "answerLine", runs: [plain(t || "", "explain")] }; }
     switch (item.type) {
       case "syntax":
@@ -577,7 +579,7 @@
         break;
       case "scramble":
         d.items.forEach(function (it, k) {
-          out.push({ kind: "choice", runs: [plain(sentMark(it.no) + " ")].concat(it.hint ? [plain(it.hint)] : [plain("(본문 " + sentMark(it.no) + " 문장)", "explain")]) });
+          out.push({ kind: "choice", runs: sentRuns(it.no).concat(it.hint ? [plain(it.hint)] : [plain("(본문 " + (it.no + 1) + "번째 문장)", "explain")]) });
           out.push({ kind: "box", runs: [plain(it.chunks)] });
           out.push({ kind: "answerLine", runs: [plain(line)] });
         });
@@ -592,7 +594,7 @@
       case "compose":
         d.translations.forEach(function (t, i) {
           var words = d.sentences[i].split(/\s+/).length;
-          out.push({ kind: "choice", runs: [plain(sentMark(i) + " " + (t || "(해석 없음)")), plain("  (" + words + "단어)", "typeRange")] });
+          out.push({ kind: "choice", runs: sentRuns(i).concat(plain(t || "(해석 없음)"), plain("  (" + words + "단어)", "typeRange")) });
           out.push({ kind: "answerLine", runs: [plain(line)] });
           if (words > 13) out.push({ kind: "answerLine", runs: [plain(line)] });
         });
@@ -601,23 +603,24 @@
     return out;
   }
 
-  // 정답지에 싣는 줄들(없으면 빈 목록)
+  // 정답지에 싣는 줄들(줄 = run 목록, 없으면 빈 목록)
   function answerLines(item) {
     var d = item.data;
+    function numbered(i, text) { return sentRuns(i).concat(plain(text)); }
     switch (item.type) {
       case "grammar":
       case "lexical":
-        return [d.answers.map(function (a, i) { return "(" + (i + 1) + ") <b>" + a.answer + "</b>" + (a.point ? " " + a.point : ""); }).join("   ")];
+        return [VM.parseRuns(d.answers.map(function (a, i) { return "(" + (i + 1) + ") <b>" + a.answer + "</b>" + (a.point ? " " + a.point : ""); }).join("   "))];
       case "blank":
-        return [d.answers.map(function (w, i) { return "(" + (i + 1) + ") " + w; }).join("   ")];
+        return [[plain(d.answers.map(function (w, i) { return "(" + (i + 1) + ") " + w; }).join("   "))]];
       case "order":
-        return [d.answer];
+        return [[plain(d.answer)]];
       case "scramble":
-        return d.items.map(function (it) { return sentMark(it.no) + " " + it.answer; });
+        return d.items.map(function (it) { return numbered(it.no, it.answer); });
       case "translate":
-        return d.translations.map(function (t, i) { return sentMark(i) + " " + (t || "-"); });
+        return d.translations.map(function (t, i) { return numbered(i, t || "-"); });
       case "compose":
-        return d.sentences.map(function (s, i) { return sentMark(i) + " " + s; });
+        return d.sentences.map(function (s, i) { return numbered(i, s); });
     }
     return [];
   }
@@ -663,7 +666,7 @@
         if (i && (opts.newPage || prev === "study")) blocks.push({ kind: "pagebreak", runs: [] });
         blocks.push({ kind: "typeHead", runs: [plain((types.indexOf(it.type) + 1) + ". " + a.name, "typeHead"), plain("   " + a.instruction, "typeRange")] });
         if (it.type === "syntax") {
-          blocks.push({ kind: "para", runs: [{ text: "주어", u: true, b: false }, plain(" 밑줄 · "), bold("동사"), plain(" 굵게 · "), plain("핵심 구문", "hl"), plain(pointMark(0), "pn"), plain(" → 오른쪽 같은 번호 설명")] });
+          blocks.push({ kind: "para", runs: [{ text: "주어", u: true, b: false }, plain(" 밑줄 · "), bold("동사"), plain(" 굵게 · "), plain("핵심 구문", "hl"), pointRun(0), plain(" → 오른쪽 같은 번호 설명")] });
         }
       }
       blocks.push({ kind: "ask", first: !heads[i], item: it.id, runs: [plain(String(nums[i]), "num"), { text: "", u: false, b: false, tab: true }, plain(sourceText(it.source) || "지문")] });
@@ -684,10 +687,10 @@
         }
         var head = [plain(nums[i] + ")", "ansNum"), plain(" " + (sourceText(it.source) || "지문"))];
         // 한 줄짜리 정답은 출처 옆에, 여러 줄이면 출처 아래에 줄마다 싣는다.
-        if (lines.length === 1) blocks.push({ kind: "ans", runs: head.concat(plain("  "), VM.parseRuns(lines[0])) });
+        if (lines.length === 1) blocks.push({ kind: "ans", runs: head.concat(plain("  "), lines[0]) });
         else {
           blocks.push({ kind: "ans", runs: head });
-          lines.forEach(function (l) { blocks.push({ kind: "ans", runs: [plain("    ")].concat(VM.parseRuns(l)) }); });
+          lines.forEach(function (l) { blocks.push({ kind: "ans", runs: [plain("    ")].concat(l) }); });
         }
       });
     }
@@ -698,8 +701,8 @@
     ACTIVITIES: ACTIVITIES,
     DEFAULT_KEYS: DEFAULT_KEYS,
     BY_KEY: BY_KEY,
-    sentMark: sentMark,
-    pointMark: pointMark,
+    sentRuns: sentRuns,
+    pointRun: pointRun,
     flowText: flowText,
     passageKey: passageKey,
     locate: locate,

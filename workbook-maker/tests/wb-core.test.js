@@ -144,8 +144,9 @@ test("구문 분석: 주어 밑줄·동사 굵게·핵심 구문 형광펜과 �
   assert.deepStrictEqual(left.filter((r) => r.u).map((r) => r.text), ["Many people"]);
   assert.deepStrictEqual(left.filter((r) => r.b).map((r) => r.text), ["believe"]);
   assert.deepStrictEqual(left.filter((r) => r.role === "hl").map((r) => r.text), ["that creativity is rare"]);
-  assert.strictEqual(rows[1][1][0][0].text.trim(), "❷"); // 둘째 문장의 설명 번호는 ❷
-  assert.strictEqual(left.map((r) => r.text).join(""), "① Many people believe that creativity is rare❶.");
+  assert.strictEqual(rows[1][1][0][0].text.trim(), "2"); // 둘째 문장의 설명 번호는 2 (지문 안에서 이어서)
+  assert.strictEqual(rows[1][1][0][0].role, "pn");
+  assert.strictEqual(left.map((r) => r.text).join("").replace(/\u00a0/g, "|"), "|1| Many people believe that creativity is rare|1|.");
 });
 
 test("AI 답변 읽기: 내용 정리와 구문 분석에서 지문에 없는 표시는 뺀다", () => {
@@ -161,7 +162,7 @@ test("AI 답변 읽기: 내용 정리와 구문 분석에서 지문에 없는 �
   assert.strictEqual(a.syntax.marks.length, SENTS.length);
   assert.strictEqual(a.syntax.points.length, 1);
   assert.ok(r.warnings.some((w) => /구문 분석/.test(w)));
-  assert.strictEqual(WB.flowText(a.summary.flow), "도입 ①~②");
+  assert.strictEqual(WB.flowText(a.summary.flow), "도입 (1~2)");
 });
 
 test("AI 구절 찾기: 대소문자·끝 문장부호·따옴표·줄임표가 달라도 지문의 글자 그대로 찾는다", () => {
@@ -219,4 +220,21 @@ test("지문 정리: 내용 정리를 아직 못 받아도 본문·해석·단�
   assert.ok(!blocks.some((b) => b.kind === "box"));
   assert.deepStrictEqual(WB.missingNeeds(a, ["study"]), ["summary"]);
   assert.deepStrictEqual(WB.missingNeeds(a, ["study"], true), []);
+});
+
+test("번호 모양: 동그라미 숫자 기호 대신 바탕색 숫자를 써서 몇 번이든 같은 모양이다", () => {
+  const runs = WB.sentRuns(20, "cell");
+  assert.strictEqual(runs[0].role, "tag");
+  assert.strictEqual(runs[0].text.trim(), "21");
+  assert.strictEqual(WB.pointRun(24).role, "pn");
+  assert.strictEqual(WB.pointRun(24).text.trim(), "25");
+  // 문장이 많아도 워크북 어디에도 동그라미 숫자 기호가 나오지 않는다.
+  const sents = Array.from({ length: 25 }, (_, i) => "Word" + i + " goes here.");
+  const a = { translations: sents.map(() => "해석"), vocab: [{ word: "w", pos: "n.", meaning: "뜻" }],
+    summary: { gist: "g", title: "T", flow: [{ part: "도입", from: 1, to: 25 }] },
+    syntax: { marks: sents.map(() => ({ subjects: [], verbs: [] })), points: sents.map((s, i) => ({ s: i + 1, phrase: "goes here", note: "n" })) } };
+  const items = ["study", "syntax", "scramble", "compose"].map((t) => ({ id: t, type: t, source: { exam: "A", no: "1" }, data: WB.makeActivity(t, sents, a, VM.makeRng(1)) }));
+  const text = JSON.stringify(WB.buildBlocks({ title: "t", layout: {}, options: {}, items }));
+  assert.ok(!/[①-⑳㉑-㉟❶-❿⓫-⓴]/.test(text), text.match(/[①-⑳㉑-㉟❶-❿⓫-⓴]/));
+  assert.strictEqual(WB.flowText(a.summary.flow), "도입 (1~25)");
 });
