@@ -2005,9 +2005,10 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
 
   // 워크북에 실리는 활동 순서.
   // 지문 정리는 지문마다 한 쪽(내용 정리 → 본문|해석 → 단어 정리)씩 싣고, 나머지는 활동마다 구간을 나눠 고른 지문을 모두 싣는다.
-  // needs: 이 활동에 필요한 AI 분석 항목. 해석 쓰기는 기본으로 넣지 않고 골라서 더 넣는다.
+  // needs: 이 활동에 꼭 필요한 AI 분석 항목, extra: 함께 요청하지만 없어도 활동은 만드는 항목.
+  // 해석 쓰기는 기본으로 넣지 않고 골라서 더 넣는다.
   var ACTIVITIES = [
-    { key: "study", name: "지문 정리", mode: "ai", needs: ["summary", "translations", "vocab"], instruction: "내용을 정리하고 본문과 해석을 비교하며 단어를 익히시오." },
+    { key: "study", name: "지문 정리", mode: "ai", needs: ["translations", "vocab"], extra: ["summary"], instruction: "내용을 정리하고 본문과 해석을 비교하며 단어를 익히시오." },
     { key: "syntax", name: "구문 분석", mode: "ai", needs: ["syntax"], instruction: "왼쪽 본문의 번호를 오른쪽 설명과 맞춰 보며 문장 구조를 익히시오." },
     { key: "lexical", name: "어휘 양자택일", mode: "ai", needs: ["lexical"], instruction: "[ ] 안에서 문맥상 알맞은 낱말을 고르시오." },
     { key: "blank", name: "빈칸 채우기", mode: "ai", needs: ["translations"], instruction: "해석을 참고하여 주어진 첫 글자로 시작하는 알맞은 단어를 빈칸에 쓰시오." },
@@ -2048,10 +2049,12 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
   }
 
   // 고른 활동에 필요한 분석 항목 중 아직 없는 것
-  function missingNeeds(analysis, types) {
+  // required가 참이면 꼭 필요한 항목(needs)만, 아니면 함께 요청할 항목(extra)까지 본다.
+  function missingNeeds(analysis, types, required) {
     var out = [];
     types.forEach(function (t) {
-      (BY_KEY[t] ? BY_KEY[t].needs : []).forEach(function (n) {
+      var a = BY_KEY[t];
+      (a ? a.needs.concat(required ? [] : a.extra || []) : []).forEach(function (n) {
         if (out.indexOf(n) < 0 && !(analysis && analysis[n])) out.push(n);
       });
     });
@@ -2242,7 +2245,7 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
   // 활동 하나를 만든다. 분석이 모자라면 오류를 낸다.
   function makeActivity(type, sentences, analysis, rng) {
     var a = analysis || {};
-    var lack = missingNeeds(a, [type]);
+    var lack = missingNeeds(a, [type], true);
     if (lack.length) throw new Error("AI 자료(" + lack.map(function (n) { return NEED_LABEL[n]; }).join("·") + ")가 아직 없어요.");
     switch (type) {
       case "study": return {
@@ -2272,6 +2275,15 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     lexical: '"lexical": 어휘 양자택일(문맥상 알맞은 낱말 고르기) 10~14개(문장마다 1~2개). 각 항목은 {"s": 문장 번호, "answer": 지문에 실제로 쓰인 낱말(1단어, 글자 그대로), "wrong": 문맥에 맞지 않는 낱말(반의어나 철자·뜻이 비슷한 낱말), "point": 고르는 근거 한 줄(우리말)}. 글의 흐름을 이해해야 고를 수 있는 내용어를 고른다.'
   };
   var NEED_ORDER = ["summary", "translations", "vocab", "syntax", "grammar", "lexical"];
+  // 답변 형식 예시에 보여 줄 모양. 내용 정리와 구문 분석은 목록이 아니라 객체 하나다(예시를 []로 주면 AI가 목록으로 답한다).
+  var NEED_SHAPE = {
+    summary: { gist: "", topic: "", topicKo: "", title: "", titleKo: "", flow: [{ part: "", from: 1, to: 1 }] },
+    translations: [""],
+    vocab: [{ word: "", form: "", pos: "", meaning: "" }],
+    syntax: { marks: [{ s: 1, subjects: [""], verbs: [""] }], points: [{ s: 1, phrase: "", note: "" }] },
+    grammar: [{ s: 1, answer: "", wrong: "", point: "" }],
+    lexical: [{ s: 1, answer: "", wrong: "", point: "" }]
+  };
   var NEED_LABEL = { summary: "내용 정리", translations: "해석", vocab: "단어", syntax: "구문 분석", grammar: "어법 양자택일", lexical: "어휘 양자택일" };
   // 한 번에 다 요청하면 답변이 길어 중간에 잘리기 쉽다. 지문 하나를 이 묶음으로 나눠 따로 요청한다.
   var NEED_GROUPS = [["summary", "translations", "vocab"], ["syntax"], ["grammar", "lexical"]];
@@ -2301,9 +2313,45 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
     lines.push("지문에서 가져오는 낱말·구절(form, answer, subjects, verbs, phrase)은 지문에서 복사해 붙인 것처럼 대소문자까지 한 글자도 다르지 않게 쓰고, \"...\"로 줄이지 않는다.");
     lines.push("요청한 항목은 하나도 빠뜨리지 말고 모두 채운다.");
     var example = { key: passages[0] ? passages[0].key : "1" };
-    needs.forEach(function (n) { example[n] = []; });
+    needs.forEach(function (n) { example[n] = NEED_SHAPE[n]; });
     lines.push("다른 말 없이 JSON 하나만 답한다. 형식: " + JSON.stringify({ passages: [example] }));
     return lines.join("\n");
+  }
+
+  // 내용 정리는 객체 하나여야 하지만, AI가 목록에 담거나 우리말 이름표를 쓰기도 한다. 그런 모양도 받아들인다.
+  var SUMMARY_ALIAS = {
+    gist: ["gist", "요지", "mainIdea", "main_idea"], topic: ["topic", "주제"], topicKo: ["topicKo", "topic_ko", "주제(우리말)"],
+    title: ["title", "제목"], titleKo: ["titleKo", "title_ko", "제목(우리말)"], flow: ["flow", "글의 흐름", "흐름", "structure"]
+  };
+  function summaryObject(v) {
+    if (Array.isArray(v)) {
+      // [{gist, title, …}] 또는 여러 객체에 나눠 담은 경우
+      var merged = {};
+      v.forEach(function (x) { if (x && typeof x === "object" && !Array.isArray(x)) Object.keys(x).forEach(function (k) { merged[k] = x[k]; }); });
+      v = merged;
+    }
+    if (!v || typeof v !== "object") return null;
+    var out = {};
+    Object.keys(SUMMARY_ALIAS).forEach(function (k) {
+      SUMMARY_ALIAS[k].some(function (name) { if (v[name] != null) { out[k] = v[name]; return true; } return false; });
+    });
+    return Object.keys(out).length ? out : null;
+  }
+
+  // 구문 분석은 {marks, points} 객체여야 하지만, AI가 목록 하나에 섞어 담기도 한다.
+  function syntaxObject(v) {
+    if (Array.isArray(v)) {
+      var marks = [], points = [];
+      v.forEach(function (x) {
+        if (!x || typeof x !== "object") return;
+        if (Array.isArray(x.marks)) marks = marks.concat(x.marks);
+        if (Array.isArray(x.points)) points = points.concat(x.points);
+        if (x.subjects || x.verbs) marks.push(x);
+        if (x.phrase) points.push(x);
+      });
+      return marks.length || points.length ? { marks: marks, points: points } : null;
+    }
+    return v && typeof v === "object" ? v : null;
   }
 
   // AI 답변을 읽는다. sentencesByKey: {key: 문장 목록}, wanted: 요청한 항목(있으면 빠진 항목을 알려 준다)
@@ -2339,8 +2387,8 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
         });
         if (vocab.length) out.vocab = vocab;
       }
-      if (raw.summary && typeof raw.summary === "object") {
-        var sm = raw.summary;
+      var sm = summaryObject(raw.summary);
+      if (sm) {
         var str = function (v) { return String(v == null ? "" : v).trim(); };
         out.summary = {
           gist: str(sm.gist), topic: str(sm.topic), topicKo: str(sm.topicKo), title: str(sm.title), titleKo: str(sm.titleKo),
@@ -2352,8 +2400,9 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
         };
         if (!out.summary.gist || !out.summary.title) delete out.summary;
       }
-      if (raw.syntax && typeof raw.syntax === "object") {
-        var syn = raw.syntax, lost = 0;
+      var syn = syntaxObject(raw.syntax);
+      if (syn) {
+        var lost = 0;
         // 주어·동사 표시: 문장마다 지문에서 찾은 것만 남긴다.
         var marks = sents.map(function () { return { subjects: [], verbs: [] }; });
         (Array.isArray(syn.marks) ? syn.marks : []).forEach(function (m) {
@@ -2435,11 +2484,14 @@ if (typeof module !== "undefined") module.exports = HWPX_TEMPLATE;
   function studyBlocks(item, no) {
     var d = item.data, sm = d.summary || {}, out = [];
     out.push({ kind: "typeHead", item: item.id, runs: [plain("지문 " + no + "   ", "typeHead"), plain(sourceText(item.source) || "지문", "typeHead")] });
-    out.push({ kind: "src", runs: [plain("내용 정리")] });
-    out.push({ kind: "box", runs: [plain("요지   ", "lbl"), plain(sm.gist || "")] });
-    out.push({ kind: "box", runs: [plain("주제   ", "lbl"), plain(sm.topic || "")].concat(sm.topicKo ? [plain("  " + sm.topicKo, "explain")] : []) });
-    out.push({ kind: "box", runs: [plain("제목   ", "lbl"), bold(sm.title || "")].concat(sm.titleKo ? [plain("  " + sm.titleKo, "explain")] : []) });
-    if (sm.flow && sm.flow.length) out.push({ kind: "box", runs: [plain("글의 흐름   ", "lbl"), plain(flowText(sm.flow), "explain")] });
+    // 내용 정리를 아직 받지 못했으면 상자를 빼고 본문·해석·단어만 싣는다(다시 만들면 내용 정리만 다시 요청한다).
+    if (sm.gist) {
+      out.push({ kind: "src", runs: [plain("내용 정리")] });
+      out.push({ kind: "box", runs: [plain("요지   ", "lbl"), plain(sm.gist)] });
+      out.push({ kind: "box", runs: [plain("주제   ", "lbl"), plain(sm.topic || "")].concat(sm.topicKo ? [plain("  " + sm.topicKo, "explain")] : []) });
+      out.push({ kind: "box", runs: [plain("제목   ", "lbl"), bold(sm.title || "")].concat(sm.titleKo ? [plain("  " + sm.titleKo, "explain")] : []) });
+      if (sm.flow && sm.flow.length) out.push({ kind: "box", runs: [plain("글의 흐름   ", "lbl"), plain(flowText(sm.flow), "explain")] });
+    }
     out.push({ kind: "richTable", runs: [], span: 1, widths: [1, 1], header: ["본문", "해석"],
       rows: d.sentences.map(function (s, i) {
         return [[[plain(sentMark(i) + " ", "cell"), plain(s, "cell")]], [[plain(sentMark(i) + " ", "cellKo"), plain(d.translations[i] || "", "cellKo")]]];

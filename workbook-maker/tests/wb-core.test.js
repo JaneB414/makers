@@ -182,7 +182,7 @@ test("AI 답변 읽기: 비어 있는 항목은 받지 않은 것으로 두고, 
   const r = WB.parseAnalysis(reply, { "1": SENTS }, ["summary", "translations", "vocab", "syntax", "grammar", "lexical"]);
   assert.deepStrictEqual(Object.keys(r.results["1"]), []);
   // 그래서 다시 만들 때 모두 다시 요청한다.
-  assert.deepStrictEqual(WB.missingNeeds(r.results["1"], ["study", "syntax", "grammar", "lexical"]), ["summary", "translations", "vocab", "syntax", "grammar", "lexical"]);
+  assert.deepStrictEqual(WB.missingNeeds(r.results["1"], ["study", "syntax", "grammar", "lexical"]), ["translations", "vocab", "summary", "syntax", "grammar", "lexical"]);
   assert.ok(r.warnings.some((w) => /내용 정리·해석·단어·구문 분석·어법 양자택일·어휘 양자택일 자료가 비어 있거나 빠져서/.test(w)));
 });
 
@@ -196,4 +196,27 @@ test("예전 자료 정리: 빈 내용 정리·구문 분석·빈 목록은 지�
   const a = { summary: { gist: "", title: "T" }, syntax: { marks: [], points: [] }, translations: ["", ""], vocab: [], grammar: [{ s: 1 }] };
   assert.strictEqual(WB.pruneAnalysis(a), 4);
   assert.deepStrictEqual(Object.keys(a), ["grammar"]);
+});
+
+test("내용 정리: 요청문의 형식 예시는 객체로 보여 주고, 목록·우리말 이름표로 온 답도 읽는다", () => {
+  const prompt = WB.buildAnalysisPrompt([{ key: "1", sentences: SENTS }], ["summary", "syntax"]);
+  const shape = JSON.parse(prompt.split("형식: ")[1]).passages[0];
+  assert.ok(!Array.isArray(shape.summary) && "gist" in shape.summary && "title" in shape.summary);
+  assert.ok(!Array.isArray(shape.syntax) && Array.isArray(shape.syntax.points));
+  const asList = WB.parseAnalysis(JSON.stringify({ passages: [{ key: "1", summary: [{ gist: "요지", title: "T", flow: [] }] }] }), { "1": SENTS }, ["summary"]);
+  assert.strictEqual(asList.results["1"].summary.title, "T");
+  const korean = WB.parseAnalysis(JSON.stringify({ passages: [{ key: "1", summary: { "요지": "요지", "제목": "제목" } }] }), { "1": SENTS }, ["summary"]);
+  assert.strictEqual(korean.results["1"].summary.gist, "요지");
+  const synList = WB.parseAnalysis(JSON.stringify({ passages: [{ key: "1", syntax: [{ s: 1, phrase: SENTS[0].split(" ").slice(0, 2).join(" "), note: "n" }] }] }), { "1": SENTS }, ["syntax"]);
+  assert.strictEqual(synList.results["1"].syntax.points.length, 1);
+});
+
+test("지문 정리: 내용 정리를 아직 못 받아도 본문·해석·단어 쪽은 만들고, 내용 정리는 다시 요청한다", () => {
+  const a = { translations: SENTS.map(() => "해석"), vocab: [{ word: "w", pos: "n.", meaning: "뜻" }] };
+  const d = WB.makeActivity("study", SENTS, a, VM.makeRng(1));
+  const blocks = WB.buildBlocks({ title: "t", layout: {}, options: {}, items: [{ id: "x", type: "study", source: { exam: "A", no: "1" }, data: d }] });
+  assert.ok(blocks.some((b) => b.kind === "richTable"));
+  assert.ok(!blocks.some((b) => b.kind === "box"));
+  assert.deepStrictEqual(WB.missingNeeds(a, ["study"]), ["summary"]);
+  assert.deepStrictEqual(WB.missingNeeds(a, ["study"], true), []);
 });
