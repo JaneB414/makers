@@ -21,6 +21,8 @@ FOOT_GRAY = "#555555"
 BOX_FILL = "#EEF2F8"
 RULE = "#C9D1DE"
 TAG_FILL = "#E3EAF5"
+HIGHLIGHT = "#FFF1A8"
+POINT_RED = "#B04A3A"
 
 # 본문 폭: A4(59528) - 좌우 여백 15mm(4252)씩
 BODY_WIDTH = 59528 - 4252 * 2
@@ -102,6 +104,13 @@ def main(wheel):
     char("ansB", 9.5, BATANG, bold=True)
     char("explain", 8.5, BATANG, color="#444444")
     char("explainU", 8.5, BATANG, underline=True, color="#444444")
+    # 워크북 메이커: 표 칸 글자(본문·해석·구문 설명), 구문 분석 형광펜, 빨간 번호, 내용 정리 이름표
+    for suffix, b, u in (("", False, False), ("U", False, True), ("B", True, False), ("BU", True, True)):
+        char("cell" + suffix, 9.5, BATANG, b, u)
+        char("hl" + suffix, 9.5, BATANG, b, u, shade=HIGHLIGHT)
+    char("cellKo", 8.5, BATANG, color="#333333")
+    char("pn", 7.5, DOTUM, bold=True, color=POINT_RED)
+    char("lbl", 8.5, DOTUM, bold=True, color=GRAY)
     h = add_items(h, "charProperties", char_items)
 
     # 테두리/배경
@@ -198,6 +207,7 @@ def main(wheel):
     para("typeHead", align="LEFT", prev=1400, after=200, line=130, border="typeRule", offsets=(0, 0, 0, 150), keep_next=True)
     para("ans", align="LEFT", left=1300, indent=-1300, line=145, after=100)
     para("answerLine", align="LEFT", left=ASK_INDENT, prev=200, line=150)
+    para("cellLeft", align="LEFT", left=1000, indent=-1000, line=140)  # 워크북 표 칸: 번호 뒤로 내어쓰기
     h = add_items(h, "paraProperties", para_items)
     files["Contents/header.xml"] = h
 

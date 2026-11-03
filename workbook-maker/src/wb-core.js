@@ -6,19 +6,21 @@
 
   var VM = root.VM || require("../../variant-maker/src/core.js");
 
-  // 워크북에 실리는 활동 순서. 활동마다 구간을 나누고, 구간 안에 고른 지문을 모두 싣는다(변형문제 메이커의 유형별 구성).
-  // needs: 이 활동에 필요한 AI 분석 항목. 기본 6가지를 앞에 두고, 나머지는 골라서 더 넣는다.
+  // 워크북에 실리는 활동 순서.
+  // 지문 정리는 지문마다 한 쪽(내용 정리 → 본문|해석 → 단어 정리)씩 싣고, 나머지는 활동마다 구간을 나눠 고른 지문을 모두 싣는다.
+  // needs: 이 활동에 필요한 AI 분석 항목. 해석 쓰기는 기본으로 넣지 않고 골라서 더 넣는다.
   var ACTIVITIES = [
-    { key: "study", name: "본문 정리", mode: "ai", needs: ["translations", "vocab"], instruction: "본문과 해석을 비교하며 읽고 단어를 익히시오." },
-    { key: "translate", name: "해석 쓰기", mode: "ai", needs: ["translations"], instruction: "다음 문장을 우리말로 해석하시오." },
+    { key: "study", name: "지문 정리", mode: "ai", needs: ["summary", "translations", "vocab"], instruction: "내용을 정리하고 본문과 해석을 비교하며 단어를 익히시오." },
+    { key: "syntax", name: "구문 분석", mode: "ai", needs: ["syntax"], instruction: "왼쪽 본문의 번호를 오른쪽 설명과 맞춰 보며 문장 구조를 익히시오." },
     { key: "lexical", name: "어휘 양자택일", mode: "ai", needs: ["lexical"], instruction: "[ ] 안에서 문맥상 알맞은 낱말을 고르시오." },
     { key: "blank", name: "빈칸 채우기", mode: "ai", needs: ["translations"], instruction: "해석을 참고하여 주어진 첫 글자로 시작하는 알맞은 단어를 빈칸에 쓰시오." },
-    { key: "grammar", name: "어법 선택", mode: "ai", needs: ["grammar"], instruction: "[ ] 안에서 어법상 알맞은 것을 고르시오." },
-    { key: "scramble", name: "단어 배열", mode: "auto", needs: [], instruction: "주어진 단어를 모두 한 번씩 사용하여 본문의 문장을 완성하시오." },
+    { key: "grammar", name: "어법 양자택일", mode: "ai", needs: ["grammar"], instruction: "[ ] 안에서 어법상 알맞은 것을 고르시오." },
+    { key: "scramble", name: "단어 순서 배열", mode: "auto", needs: [], instruction: "우리말에 맞게 주어진 단어를 모두 한 번씩 사용하여 문장을 완성하시오." },
     { key: "order", name: "문장 순서 배열", mode: "auto", needs: [], instruction: "주어진 문장 다음에 이어질 글의 순서를 쓰시오." },
-    { key: "compose", name: "영작하기", mode: "ai", needs: ["translations"], instruction: "우리말에 맞게 본문의 영어 문장을 쓰시오." }
+    { key: "compose", name: "영작하기", mode: "ai", needs: ["translations"], instruction: "우리말에 맞게 본문의 영어 문장을 쓰시오. ( ) 안은 단어 수입니다." },
+    { key: "translate", name: "해석 쓰기", mode: "ai", needs: ["translations"], instruction: "다음 문장을 우리말로 해석하시오." }
   ];
-  var DEFAULT_KEYS = ["study", "translate", "lexical", "blank", "grammar", "scramble"];
+  var DEFAULT_KEYS = ["study", "syntax", "lexical", "blank", "grammar", "scramble", "order", "compose"];
   var BY_KEY = {};
   ACTIVITIES.forEach(function (a, i) { a.order = i; BY_KEY[a.key] = a; });
 
@@ -77,12 +79,13 @@
 
   // 빈칸 채우기: 문장마다 빈칸을 넣고 해석을 함께 준다. 분석에 어휘(지문 속 형태)가 있으면 그 낱말을 먼저 빈칸으로 만든다.
   function makeBlank(sentences, rng, analysis) {
-    var wanted = Math.max(5, Math.min(14, sentences.length + 2));
+    // 빈칸은 촘촘하게: 문장마다 2개 정도, 지문 전체에서 6~24개
+    var wanted = Math.max(6, Math.min(24, Math.round(sentences.length * 2.2)));
     var picks = sentences.map(function () { return []; });
     var count = 0;
     function overlaps(i, pos) { return picks[i].some(function (p) { return pos.start < p.end && p.start < pos.end; }); }
     function add(i, pos, word) {
-      if (count >= wanted || overlaps(i, pos) || picks[i].length >= 2) return false;
+      if (count >= wanted || overlaps(i, pos) || picks[i].length >= 3) return false;
       picks[i].push({ start: pos.start, end: pos.end, word: word });
       count++;
       return true;
@@ -96,7 +99,7 @@
       }
     });
     // 문장마다 고르게: 한 바퀴에 문장당 하나씩, 긴 낱말을 조금 더 자주 고른다.
-    for (var round = 0; round < 2 && count < wanted; round++) {
+    for (var round = 0; round < 3 && count < wanted; round++) {
       rng.shuffle(sentences.map(function (_, i) { return i; })).forEach(function (i) {
         if (count >= wanted || picks[i].length > round) return;
         var cands = blankCandidates(sentences[i]).filter(function (c) { return !overlaps(i, c); });
@@ -151,21 +154,18 @@
     };
   }
 
-  // 단어 배열: 문장마다 낱말(긴 문장은 2~3낱말 덩어리)을 섞는다. 해석이 있으면 우리말을 함께 준다.
+  // 단어 순서 배열: 문장마다 낱말을 하나씩 잘라 섞는다. 해석이 있으면 우리말을 함께 준다.
   function makeScramble(sentences, rng, analysis) {
     var tr = (analysis && analysis.translations) || [];
     var items = [];
     sentences.forEach(function (s, i) {
       var end = (s.match(/[.!?]+["')\]]*$/) || [""])[0];
       var words = s.slice(0, s.length - end.length).trim().split(/\s+/);
-      if (words.length < 5) return;
+      if (words.length < 3) return;
       if (words[0] !== "I" && /^[A-Z][a-z'-]*$/.test(words[0])) words[0] = words[0].toLowerCase();
-      var size = Math.ceil(words.length / 10);
-      var chunks = [];
-      for (var k = 0; k < words.length; k += size) chunks.push(words.slice(k, k + size).join(" "));
-      items.push({ no: i, hint: tr[i] || "", chunks: shuffleApart(chunks, rng).join(" / "), answer: s });
+      items.push({ no: i, hint: tr[i] || "", chunks: shuffleApart(words, rng).join(" / "), answer: s });
     });
-    if (!items.length) throw new Error("배열할 만한 문장(5단어 이상)이 없어요.");
+    if (!items.length) throw new Error("배열할 만한 문장(3단어 이상)이 없어요.");
     return { items: items };
   }
 
@@ -204,9 +204,10 @@
     if (lack.length) throw new Error("AI 분석(" + lack.join(", ") + ")이 아직 없어요.");
     switch (type) {
       case "study": return {
-        sentences: sentences.slice(), translations: a.translations.slice(),
+        summary: a.summary, sentences: sentences.slice(), translations: a.translations.slice(),
         rows: a.vocab.map(function (v) { return { word: v.word, pos: v.pos || "", meaning: v.meaning }; })
       };
+      case "syntax": return { sentences: sentences.slice(), marks: a.syntax.marks, points: a.syntax.points };
       case "grammar": return makeChoice(sentences, a.grammar, rng);
       case "lexical": return makeChoice(sentences, a.lexical, rng);
       case "blank": return makeBlank(sentences, rng, a);
@@ -221,12 +222,14 @@
   // ---------- AI 요청문 ----------
 
   var NEED_GUIDE = {
+    summary: '"summary": 지문 내용 정리. {"gist": 요지(우리말 한 문장), "topic": 주제(영어 명사구), "topicKo": 주제의 우리말, "title": 제목(영어, 각 단어 첫 글자 대문자), "titleKo": 제목의 우리말, "flow": 글의 흐름 3~6단계 [{"part": 단계 이름(예: 통념, 반박, 예시, 원리, 결론, 문제 제기, 해결책), "from": 시작 문장 번호, "to": 끝 문장 번호}]}. flow는 1번 문장부터 마지막 문장까지 빠짐없이 이어지게 나눈다.',
     translations: '"translations": 문장마다 우리말 해석 하나씩. 개수는 그 지문의 문장 수와 꼭 같게, 번호 순서대로. 영어 구조가 보이도록 직역에 가깝게 하되 자연스러운 우리말로 쓴다.',
-    vocab: '"vocab": 고2~고3 학생이 꼭 알아야 할 단어·숙어 12~16개를 지문에 나온 순서대로. 각 항목은 {"word": 사전에 싣는 기본형(숙어는 원형), "form": 지문에 나온 그대로의 형태(대소문자까지 똑같이), "pos": "n." "v." "a." "ad." "prep." "conj." "phr." 중 하나, "meaning": 이 지문 문맥의 우리말 뜻(쉼표로 2개까지)}. a, the, is 같은 쉬운 낱말은 넣지 않는다.',
-    grammar: '"grammar": 어법 선택 6~8개. 각 항목은 {"s": 문장 번호, "answer": 지문에 실제로 쓰인 형태(지문에서 글자 그대로 찾을 수 있는 1~3단어), "wrong": 학생이 헷갈릴 만한 틀린 형태, "point": 출제 포인트 한 줄(우리말)}. 한 문장에 2개까지, 지문 전체에 고르게 둔다. 포인트: 멀리 떨어진 주어-동사 수일치, 본동사 vs 준동사, 능동 vs 수동, 현재분사 vs 과거분사, 관계대명사 that/what/which, 관계대명사 vs 관계부사, 병렬 구조, 대명사의 수·재귀대명사, 형용사 vs 부사, to부정사 vs 동명사, 도치 등. 조동사 뒤 동사원형, 철자처럼 너무 쉬운 포인트는 쓰지 않는다.',
-    lexical: '"lexical": 문맥상 알맞은 낱말 고르기 5~7개. 각 항목은 {"s": 문장 번호, "answer": 지문에 실제로 쓰인 낱말(1단어, 글자 그대로), "wrong": 문맥에 맞지 않는 낱말(반의어나 철자·뜻이 비슷한 낱말), "point": 고르는 근거 한 줄(우리말)}. 글의 흐름을 이해해야 고를 수 있는 내용어를 고른다.'
+    vocab: '"vocab": 고2~고3 학생이 꼭 알아야 할 단어·숙어 14~18개를 지문에 나온 순서대로. 각 항목은 {"word": 사전에 싣는 기본형(숙어는 원형), "form": 지문에 나온 그대로의 형태(대소문자까지 똑같이), "pos": "n." "v." "a." "ad." "prep." "conj." "phr." 중 하나, "meaning": 이 지문 문맥의 우리말 뜻(쉼표로 2개까지)}. a, the, is 같은 쉬운 낱말은 넣지 않는다.',
+    syntax: '"syntax": 구문 분석. {"marks": 문장마다 {"s": 문장 번호, "subjects": 주어(수식어 포함, 지문 글자 그대로) 목록, "verbs": 본동사(조동사·부정어 포함, 지문 글자 그대로) 목록}, "points": 핵심 구문 [{"s": 문장 번호, "phrase": 형광펜을 칠할 부분(지문 글자 그대로 1~8단어), "note": 설명 한 줄}]}. marks는 모든 문장에 하나씩, 대등절이면 주어·동사를 여러 개 쓴다. points는 문장마다 1~3개, 문장 안에서 나오는 순서대로, 서로 겹치지 않게 고른다. note는 짧게, 무엇을 꾸미는지는 화살표로 쓴다(예: "과거분사구 → a rare gift 수식", "that절(명사절) → believe의 목적어", "주어 a designer에 수일치 → 단수 동사", "tend to + 동사원형: ~하는 경향이 있다").',
+    grammar: '"grammar": 어법 양자택일 10~14개(문장마다 1~2개). 각 항목은 {"s": 문장 번호, "answer": 지문에 실제로 쓰인 형태(지문에서 글자 그대로 찾을 수 있는 1~3단어), "wrong": 학생이 헷갈릴 만한 틀린 형태, "point": 출제 포인트 한 줄(우리말)}. 한 문장에 2개까지, 지문 전체에 고르게 둔다. 포인트: 멀리 떨어진 주어-동사 수일치, 본동사 vs 준동사, 능동 vs 수동, 현재분사 vs 과거분사, 관계대명사 that/what/which, 관계대명사 vs 관계부사, 병렬 구조, 대명사의 수·재귀대명사, 형용사 vs 부사, to부정사 vs 동명사, 도치 등. 조동사 뒤 동사원형, 철자처럼 너무 쉬운 포인트는 쓰지 않는다.',
+    lexical: '"lexical": 어휘 양자택일(문맥상 알맞은 낱말 고르기) 10~14개(문장마다 1~2개). 각 항목은 {"s": 문장 번호, "answer": 지문에 실제로 쓰인 낱말(1단어, 글자 그대로), "wrong": 문맥에 맞지 않는 낱말(반의어나 철자·뜻이 비슷한 낱말), "point": 고르는 근거 한 줄(우리말)}. 글의 흐름을 이해해야 고를 수 있는 내용어를 고른다.'
   };
-  var NEED_ORDER = ["translations", "vocab", "grammar", "lexical"];
+  var NEED_ORDER = ["summary", "translations", "vocab", "syntax", "grammar", "lexical"];
 
   // passages: [{key, sentences}], needs: 만들 항목
   function buildAnalysisPrompt(passages, needs) {
@@ -257,7 +260,7 @@
     var list = [];
     VM.extractJsonAll(text).forEach(function (data) {
       if (Array.isArray(data.passages)) list = list.concat(data.passages);
-      else if (data.translations || data.vocab || data.grammar || data.lexical) list.push(data);
+      else if (NEED_ORDER.some(function (n) { return data[n]; })) list.push(data);
     });
     if (!list.length) throw new Error("AI 답변에 passages 목록이 없어요.");
     var keys = Object.keys(sentencesByKey);
@@ -281,6 +284,43 @@
         });
         if (!out.vocab.length) warnings.push(label + ": 어휘 목록이 비어 있어요.");
       }
+      if (raw.summary && typeof raw.summary === "object") {
+        var sm = raw.summary;
+        var str = function (v) { return String(v == null ? "" : v).trim(); };
+        out.summary = {
+          gist: str(sm.gist), topic: str(sm.topic), topicKo: str(sm.topicKo), title: str(sm.title), titleKo: str(sm.titleKo),
+          flow: (Array.isArray(sm.flow) ? sm.flow : []).map(function (f) {
+            var from = parseInt(f && f.from, 10), to = parseInt(f && f.to, 10);
+            if (!f || !f.part || !(from >= 1 && from <= sents.length)) return null;
+            return { part: str(f.part), from: from, to: to >= from && to <= sents.length ? to : from };
+          }).filter(Boolean)
+        };
+        if (!out.summary.gist || !out.summary.title) warnings.push(label + ": 내용 정리(요지·제목)가 비어 있어요.");
+      }
+      if (raw.syntax && typeof raw.syntax === "object") {
+        var syn = raw.syntax, lost = 0;
+        // 주어·동사 표시: 문장마다 지문에서 찾은 것만 남긴다.
+        var marks = sents.map(function () { return { subjects: [], verbs: [] }; });
+        (Array.isArray(syn.marks) ? syn.marks : []).forEach(function (m) {
+          var i = parseInt(m && m.s, 10) - 1;
+          if (!(i >= 0 && i < sents.length)) return;
+          ["subjects", "verbs"].forEach(function (f) {
+            (Array.isArray(m[f]) ? m[f] : []).forEach(function (t) {
+              t = String(t).trim();
+              if (t && findAll(sents[i], t, false).length) marks[i][f].push(t);
+              else if (t) lost++;
+            });
+          });
+        });
+        var points = (Array.isArray(syn.points) ? syn.points : []).map(function (pt) {
+          var i = parseInt(pt && pt.s, 10) - 1, phrase = String((pt && pt.phrase) || "").trim();
+          if (!(i >= 0 && i < sents.length) || !phrase || !pt.note || !findAll(sents[i], phrase, false).length) { lost++; return null; }
+          return { s: i + 1, phrase: phrase, note: String(pt.note).trim() };
+        }).filter(Boolean);
+        out.syntax = { marks: marks, points: points };
+        if (lost) warnings.push(label + " 구문 분석: 지문에서 찾지 못한 표시 " + lost + "개는 뺐어요.");
+        if (!points.length) warnings.push(label + ": 구문 분석의 핵심 구문이 비어 있어요.");
+      }
       ["grammar", "lexical"].forEach(function (field) {
         if (!Array.isArray(raw[field])) return;
         var dropped = 0;
@@ -296,7 +336,7 @@
           }
           return s ? { s: s, answer: answer, wrong: wrong, point: String(it.point || "").trim() } : null;
         }).filter(function (it) { if (!it) dropped++; return it; });
-        if (dropped) warnings.push(label + " " + (field === "grammar" ? "어법" : "어휘") + " 선택: 지문에서 찾지 못한 " + dropped + "개는 뺐어요.");
+        if (dropped) warnings.push(label + " " + (field === "grammar" ? "어법" : "어휘") + " 양자택일: 지문에서 찾지 못한 " + dropped + "개는 뺐어요.");
       });
       results[key] = out;
     });
@@ -318,23 +358,88 @@
     return (src.exam ? src.exam + " " : "") + VM.noLabel(src.no);
   }
 
-  // 활동 하나의 본문 블록
+  // 구문 분석 번호: 지문 하나 안에서 ❶부터 이어서 센다.
+  var POINT_MARKS = "❶❷❸❹❺❻❼❽❾❿⓫⓬⓭⓮⓯⓰⓱⓲⓳⓴".split("");
+  function pointMark(i) { return POINT_MARKS[i] || "(" + (i + 1) + ")"; }
+
+  // 글의 흐름: "통념 ① → 반박 ②~③ → …"
+  function flowText(flow) {
+    return flow.map(function (f) { return f.part + " " + sentMark(f.from - 1) + (f.to > f.from ? "~" + sentMark(f.to - 1) : ""); }).join(" → ");
+  }
+
+  // 지문 정리 한 쪽: 지문 제목 → 내용 정리 → 본문|해석 → 단어 정리
+  function studyBlocks(item, no) {
+    var d = item.data, sm = d.summary || {}, out = [];
+    out.push({ kind: "typeHead", item: item.id, runs: [plain("지문 " + no + "   ", "typeHead"), plain(sourceText(item.source) || "지문", "typeHead")] });
+    out.push({ kind: "src", runs: [plain("내용 정리")] });
+    out.push({ kind: "box", runs: [plain("요지   ", "lbl"), plain(sm.gist || "")] });
+    out.push({ kind: "box", runs: [plain("주제   ", "lbl"), plain(sm.topic || "")].concat(sm.topicKo ? [plain("  " + sm.topicKo, "explain")] : []) });
+    out.push({ kind: "box", runs: [plain("제목   ", "lbl"), bold(sm.title || "")].concat(sm.titleKo ? [plain("  " + sm.titleKo, "explain")] : []) });
+    if (sm.flow && sm.flow.length) out.push({ kind: "box", runs: [plain("글의 흐름   ", "lbl"), plain(flowText(sm.flow), "explain")] });
+    out.push({ kind: "richTable", runs: [], span: 1, widths: [1, 1], header: ["본문", "해석"],
+      rows: d.sentences.map(function (s, i) {
+        return [[[plain(sentMark(i) + " ", "cell"), plain(s, "cell")]], [[plain(sentMark(i) + " ", "cellKo"), plain(d.translations[i] || "", "cellKo")]]];
+      }) });
+    if (d.rows.length) {
+      // 단어 정리는 두 칸으로 나눠 한 쪽에 들어가게 한다.
+      var half = Math.ceil(d.rows.length / 2);
+      var rows = [];
+      for (var k = 0; k < half; k++) {
+        var a = d.rows[k], b = d.rows[k + half];
+        rows.push([String(k + 1), a.word, a.pos, a.meaning].concat(b ? [String(k + half + 1), b.word, b.pos, b.meaning] : ["", "", "", ""]));
+      }
+      out.push({ kind: "src", runs: [plain("단어 정리")] });
+      out.push({ kind: "answerTable", runs: [], span: 1, widths: [6, 16, 6, 22, 6, 16, 6, 22], header: ["번호", "단어", "품사", "뜻", "번호", "단어", "품사", "뜻"], rows: rows });
+    }
+    return out;
+  }
+
+  // 구문 분석 왼쪽 칸: 주어 밑줄, 동사 굵게, 핵심 구문 형광펜 + 번호. 오른쪽 칸: 번호별 설명.
+  function syntaxRows(d) {
+    var n = 0;
+    return d.sentences.map(function (s, i) {
+      var L = s.length, u = [], b = [], hl = [];
+      for (var x = 0; x < L; x++) { u.push(false); b.push(false); hl.push(-1); }
+      var m = d.marks[i] || { subjects: [], verbs: [] };
+      function paint(arr, phrase, value) {
+        var at = findAll(s, phrase, false)[0];
+        if (at) for (var y = at.start; y < at.end; y++) arr[y] = value;
+      }
+      m.subjects.forEach(function (t) { paint(u, t, true); });
+      m.verbs.forEach(function (t) { paint(b, t, true); });
+      var notes = [];
+      d.points.filter(function (pt) { return pt.s === i + 1; }).forEach(function (pt) {
+        // 이미 칠한 곳과 겹치지 않는 첫 자리에 칠한다.
+        var at = findAll(s, pt.phrase, false).filter(function (pos) {
+          for (var y = pos.start; y < pos.end; y++) if (hl[y] >= 0) return false;
+          return true;
+        })[0];
+        if (!at) return;
+        for (var y = at.start; y < at.end; y++) hl[y] = n;
+        notes.push([plain(pointMark(n) + " ", "pn"), plain(pt.note, "cell")]);
+        n++;
+      });
+      var runs = [plain(sentMark(i) + " ", "cell")], x0 = 0;
+      while (x0 < L) {
+        var x1 = x0;
+        while (x1 < L && u[x1] === u[x0] && b[x1] === b[x0] && hl[x1] === hl[x0]) x1++;
+        runs.push({ text: s.slice(x0, x1), u: u[x0], b: b[x0], role: hl[x0] >= 0 ? "hl" : "cell" });
+        if (hl[x0] >= 0 && (x1 === L || hl[x1] !== hl[x0])) runs.push(plain(pointMark(hl[x0]), "pn"));
+        x0 = x1;
+      }
+      return [[runs], notes];
+    });
+  }
+
+  // 활동 하나의 본문 블록 (지문 정리는 studyBlocks)
   function activityBlocks(item, columns) {
     var d = item.data, out = [];
     var line = writeLine(columns);
     function sentenceBlock(i, text) { return { kind: "choice", runs: [plain(sentMark(i) + " ")].concat(VM.parseRuns(text)) }; }
     function translationBlock(t) { return { kind: "answerLine", runs: [plain(t || "", "explain")] }; }
     switch (item.type) {
-      case "study":
-        d.sentences.forEach(function (s, i) {
-          out.push(sentenceBlock(i, s));
-          out.push(translationBlock(d.translations[i]));
-        });
-        if (d.rows.length) {
-          out.push({ kind: "src", runs: [plain("단어 정리")] });
-          out.push({ kind: "answerTable", runs: [], span: 1, widths: [7, 33, 10, 50], header: ["번호", "단어", "품사", "뜻"],
-            rows: d.rows.map(function (v, i) { return [String(i + 1), v.word, v.pos, v.meaning]; }) });
-        }
+      case "syntax":
+        out.push({ kind: "richTable", runs: [], span: 1, widths: [54, 46], header: ["본문", "구문 설명"], rows: syntaxRows(d) });
         break;
       case "blank":
         d.sentences.forEach(function (s, i) {
@@ -353,7 +458,7 @@
         break;
       case "scramble":
         d.items.forEach(function (it, k) {
-          out.push({ kind: "choice", runs: [plain(sentMark(k) + " ")].concat(it.hint ? [plain(it.hint)] : [plain("(본문 " + sentMark(it.no) + " 문장)", "explain")]) });
+          out.push({ kind: "choice", runs: [plain(sentMark(it.no) + " ")].concat(it.hint ? [plain(it.hint)] : [plain("(본문 " + sentMark(it.no) + " 문장)", "explain")]) });
           out.push({ kind: "box", runs: [plain(it.chunks)] });
           out.push({ kind: "answerLine", runs: [plain(line)] });
         });
@@ -367,9 +472,10 @@
         break;
       case "compose":
         d.translations.forEach(function (t, i) {
-          out.push(sentenceBlock(i, t || "(해석 없음)"));
+          var words = d.sentences[i].split(/\s+/).length;
+          out.push({ kind: "choice", runs: [plain(sentMark(i) + " " + (t || "(해석 없음)")), plain("  (" + words + "단어)", "typeRange")] });
           out.push({ kind: "answerLine", runs: [plain(line)] });
-          if (d.sentences[i].split(/\s+/).length > 14) out.push({ kind: "answerLine", runs: [plain(line)] });
+          if (words > 13) out.push({ kind: "answerLine", runs: [plain(line)] });
         });
         break;
     }
@@ -382,13 +488,13 @@
     switch (item.type) {
       case "grammar":
       case "lexical":
-        return d.answers.map(function (a, i) { return "(" + (i + 1) + ") <b>" + a.answer + "</b>" + (a.point ? "  " + a.point : ""); });
+        return [d.answers.map(function (a, i) { return "(" + (i + 1) + ") <b>" + a.answer + "</b>" + (a.point ? " " + a.point : ""); }).join("   ")];
       case "blank":
         return [d.answers.map(function (w, i) { return "(" + (i + 1) + ") " + w; }).join("   ")];
       case "order":
         return [d.answer];
       case "scramble":
-        return d.items.map(function (it, k) { return sentMark(k) + " " + it.answer; });
+        return d.items.map(function (it) { return sentMark(it.no) + " " + it.answer; });
       case "translate":
         return d.translations.map(function (t, i) { return sentMark(i) + " " + (t || "-"); });
       case "compose":
@@ -406,7 +512,7 @@
   }
 
   // 워크북을 서식 블록 목록으로 바꾼다(블록 모양은 변형문제 메이커와 같다).
-  // 활동마다 구간 제목(활동 이름 + 지시문)을 달고, 그 아래에 지문마다 번호와 출처를 붙여 싣는다.
+  // 지문 정리는 지문마다 한 쪽씩, 나머지는 활동마다 구간 제목(번호. 활동 이름 + 지시문)을 달고 그 아래에 지문마다 번호와 출처를 붙여 싣는다.
   // doc: {title, layout, options: {columns, answers, newPage}, items}
   function buildBlocks(doc) {
     var blocks = [];
@@ -418,20 +524,28 @@
     blocks.push({ kind: "title", full: true, runs: [plain(doc.title || "영어 워크북")] });
     blocks.push({ kind: "nameLine", full: true, runs: [plain(layout.showName === false ? "" : "반 ________   번호 ________   이름 ________________")] });
 
-    // 활동마다 번호를 1부터 센다.
-    var nums = [], heads = [], last = null, n = 0;
-    items.forEach(function (it, i) {
+    // 활동마다 번호를 1부터 센다. 구간 번호는 실린 활동 순서대로.
+    var nums = [], heads = [], types = [], last = null, n = 0;
+    items.forEach(function (it) {
       heads.push(it.type !== last);
-      if (it.type !== last) { n = 0; last = it.type; }
+      if (it.type !== last) { n = 0; last = it.type; types.push(it.type); }
       nums.push(++n);
     });
-    var section = 0;
     items.forEach(function (it, i) {
       var a = BY_KEY[it.type];
+      var prev = i ? items[i - 1].type : null;
+      if (it.type === "study") {
+        // 지문 하나 = 한 쪽
+        if (i) blocks.push({ kind: "pagebreak", runs: [] });
+        blocks.push.apply(blocks, studyBlocks(it, nums[i]));
+        return;
+      }
       if (heads[i]) {
-        if (i > 0 && opts.newPage) blocks.push({ kind: "pagebreak", runs: [] });
-        section++;
-        blocks.push({ kind: "typeHead", runs: [plain(section + ". " + a.name, "typeHead"), plain("   " + a.instruction, "typeRange")] });
+        if (i && (opts.newPage || prev === "study")) blocks.push({ kind: "pagebreak", runs: [] });
+        blocks.push({ kind: "typeHead", runs: [plain((types.indexOf(it.type) + 1) + ". " + a.name, "typeHead"), plain("   " + a.instruction, "typeRange")] });
+        if (it.type === "syntax") {
+          blocks.push({ kind: "para", runs: [{ text: "주어", u: true, b: false }, plain(" 밑줄 · "), bold("동사"), plain(" 굵게 · "), plain("핵심 구문", "hl"), plain(pointMark(0), "pn"), plain(" → 오른쪽 같은 번호 설명")] });
+        }
       }
       blocks.push({ kind: "ask", first: !heads[i], item: it.id, runs: [plain(String(nums[i]), "num"), { text: "", u: false, b: false, tab: true }, plain(sourceText(it.source) || "지문")] });
       blocks.push.apply(blocks, activityBlocks(it, columns));
@@ -466,6 +580,8 @@
     DEFAULT_KEYS: DEFAULT_KEYS,
     BY_KEY: BY_KEY,
     sentMark: sentMark,
+    pointMark: pointMark,
+    flowText: flowText,
     passageKey: passageKey,
     missingNeeds: missingNeeds,
     findAll: findAll,

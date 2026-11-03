@@ -36,6 +36,46 @@
       { word: "treat A as B", form: "", pos: "phr.", meaning: "A를 B로 여기다" },
       { word: "accident", form: "accident", pos: "n.", meaning: "우연, 사고" }
     ],
+    summary: {
+      gist: "창의성은 타고난 재능이 아니라 꾸준한 연습으로 길러지는 능력이므로, 상상력을 매일의 연습으로 여겨야 한다.",
+      topic: "creativity as a skill developed through regular practice",
+      topicKo: "꾸준한 연습으로 길러지는 능력으로서의 창의성",
+      title: "Creativity Is a Muscle, Not a Gift",
+      titleKo: "창의성은 재능이 아니라 근육이다",
+      flow: [{ part: "통념", from: 1, to: 1 }, { part: "반박·근거", from: 2, to: 3 }, { part: "예시", from: 4, to: 4 }, { part: "원리", from: 5, to: 8 }, { part: "결론", from: 9, to: 9 }]
+    },
+    syntax: {
+      marks: [
+        { s: 1, subjects: ["Many people"], verbs: ["believe"] },
+        { s: 2, subjects: ["research"], verbs: ["suggests"] },
+        { s: 3, subjects: ["our brains"], verbs: ["form"] },
+        { s: 4, subjects: ["a designer who sketches ten rough ideas each morning"], verbs: ["soon finds"] },
+        { s: 5, subjects: ["This habit"], verbs: ["works"] },
+        { s: 6, subjects: ["Most of the early ideas", "a few"], verbs: ["will be", "will surprise"] },
+        { s: 7, subjects: ["Such surprises"], verbs: ["rarely appear"] },
+        { s: 8, subjects: ["they"], verbs: ["tend to emerge"] },
+        { s: 9, subjects: ["anyone who wants to be more creative"], verbs: ["should treat"] }
+      ],
+      points: [
+        { s: 1, phrase: "that creativity is a rare gift", note: "that절(명사절) → believe의 목적어" },
+        { s: 1, phrase: "given to only a few", note: "과거분사구 → a rare gift 수식 (‘주어진’ 재능)" },
+        { s: 2, phrase: "that grows stronger", note: "주격 관계대명사절 → a muscle 수식 / grow + 비교급: 점점 ~해지다" },
+        { s: 3, phrase: "looking", note: "practice + 동명사: ~하는 것을 연습하다" },
+        { s: 3, phrase: "that did not exist before", note: "관계대명사절 → connections 수식" },
+        { s: 4, phrase: "who sketches ten rough ideas each morning", note: "관계대명사절 → 주어 a designer 수식" },
+        { s: 4, phrase: "finds", note: "주어 a designer에 수일치 → 단수 동사" },
+        { s: 4, phrase: "easily", note: "부사 → 동사 come 수식" },
+        { s: 5, phrase: "leads to", note: "lead to: ~로 이어지다 / 주어 quantity(셀 수 없음) → 단수" },
+        { s: 6, phrase: "Most of the early ideas", note: "most of + 복수명사 → 복수 취급" },
+        { s: 6, phrase: "a few", note: "= a few ideas: 몇몇 아이디어" },
+        { s: 7, phrase: "rarely", note: "준부정어: 좀처럼 ~하지 않는" },
+        { s: 8, phrase: "tend to emerge", note: "tend to + 동사원형: ~하는 경향이 있다" },
+        { s: 8, phrase: "steady, sometimes boring,", note: "두 형용사가 함께 → effort 수식" },
+        { s: 9, phrase: "who wants to be more creative", note: "관계대명사절 → anyone 수식 / anyone은 단수 → wants" },
+        { s: 9, phrase: "treat imagination as a daily practice", note: "treat A as B: A를 B로 여기다" },
+        { s: 9, phrase: "rather than", note: "A rather than B: B라기보다는 A" }
+      ]
+    },
     grammar: [
       { s: 1, answer: "given", wrong: "giving", point: "gift가 ‘주어지는’ 것이므로 과거분사" },
       { s: 2, answer: "grows", wrong: "grow", point: "관계절 동사는 선행사 a muscle에 수일치" },
@@ -43,16 +83,26 @@
       { s: 3, answer: "that", wrong: "what", point: "선행사 connections가 있으므로 관계대명사 that" },
       { s: 4, answer: "finds", wrong: "find", point: "주어 a designer(관계절이 수식)에 수일치" },
       { s: 4, answer: "easily", wrong: "easy", point: "동사 come을 꾸미는 부사" },
+      { s: 5, answer: "leads", wrong: "lead", point: "주어 quantity는 셀 수 없는 명사 → 단수" },
+      { s: 6, answer: "ordinary", wrong: "ordinarily", point: "be동사의 보어 자리 → 형용사" },
       { s: 7, answer: "passively", wrong: "passive", point: "동사 wait를 꾸미는 부사" },
+      { s: 8, answer: "tend", wrong: "tends", point: "주어 they(= surprises)는 복수" },
+      { s: 8, answer: "to emerge", wrong: "emerging", point: "tend는 to부정사를 목적어로 취함" },
       { s: 9, answer: "wants", wrong: "want", point: "anyone은 단수 취급" }
     ],
     lexical: [
       { s: 1, answer: "rare", wrong: "common", point: "소수에게만 주어진다고 믿는 재능" },
-      { s: 2, answer: "stronger", wrong: "weaker", point: "규칙적으로 쓰면 강해지는 근육" },
+      { s: 2, answer: "stronger", wrong: "weaker", point: "쓸수록 강해지는 근육" },
+      { s: 3, answer: "familiar", wrong: "strange", point: "익숙한 문제를 새로운 각도에서" },
+      { s: 4, answer: "rough", wrong: "perfect", point: "매일 아침 대충 그리는 아이디어 열 개" },
       { s: 4, answer: "unusual", wrong: "usual", point: "연습으로 떠오르는 독창적인 해결책" },
       { s: 5, answer: "quality", wrong: "quantity", point: "양이 결국 질로 이어짐" },
-      { s: 7, answer: "rarely", wrong: "frequently", point: "수동적으로 기다리면 놀라움은 잘 생기지 않음" },
-      { s: 8, answer: "steady", wrong: "occasional", point: "꾸준한 노력 속에서 나타남" }
+      { s: 6, answer: "ordinary", wrong: "remarkable", point: "초기 아이디어 대부분은 평범함(but 뒤와 대조)" },
+      { s: 7, answer: "rarely", wrong: "frequently", point: "기다리기만 하면 놀라움은 잘 생기지 않음" },
+      { s: 7, answer: "passively", wrong: "actively", point: "영감을 수동적으로 기다림" },
+      { s: 8, answer: "steady", wrong: "occasional", point: "꾸준한 노력 속에서 나타남" },
+      { s: 8, answer: "boring", wrong: "exciting", point: "때로는 지루한 노력" },
+      { s: 9, answer: "daily", wrong: "occasional", point: "운 좋은 우연과 대조되는 매일의 연습" }
     ]
   };
   var STATE_KEY = "workbook-maker-v1";
@@ -64,16 +114,17 @@
   };
   var PROMPT_PASSAGES = 2; // 수동 요청문 하나에 넣는 지문 수
   var DESC = {
-    study: "출처 + 문장별 본문·해석 + 단어·품사·뜻 표",
-    translate: "영어 문장 보고 해석 쓰기",
-    lexical: "[알맞은 낱말 / 반대 낱말] 고르기",
-    blank: "문장마다 빈칸(첫 글자 힌트) + 해석",
-    grammar: "[맞는 형태 / 틀린 형태] 고르기",
-    scramble: "문장마다 낱말 덩어리 배열",
+    study: "지문마다 한 쪽: 요지·주제·제목·글의 흐름 + 본문|해석 + 단어 정리",
+    syntax: "본문(주어 밑줄·동사 굵게·핵심 구문 형광펜+번호) | 번호별 설명",
+    lexical: "[알맞은 낱말 / 반대 낱말] 고르기, 문장마다 1~2개",
+    blank: "문장마다 빈칸 2개쯤(첫 글자 힌트) + 해석",
+    grammar: "[맞는 형태 / 틀린 형태] 고르기, 문장마다 1~2개",
+    scramble: "문장마다 한 단어씩 잘라 섞기 + 우리말 뜻",
     order: "첫 문장 뒤 (A)~(H) 순서 쓰기",
-    compose: "해석 보고 영어 문장 쓰기"
+    compose: "해석 보고 영어 문장 쓰기 (단어 수 힌트)",
+    translate: "영어 문장 보고 해석 쓰기"
   };
-  var STATE_VERSION = 2; // 활동 구성이 바뀌면 올린다. 예전 워크북은 지우고 기본 활동을 다시 고른다.
+  var STATE_VERSION = 3; // 활동 구성이 바뀌면 올린다. 예전 워크북은 지우고 기본 활동을 다시 고른다.
 
   function $(id) { return document.getElementById(id); }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -625,6 +676,7 @@
   // ---------- 쪽 나누어 그리기 ----------
 
   var HEAD_KINDS = { eyebrow: true, title: true, nameLine: true };
+  var STICKY = { box: true, answerLine: true }; // 앞 문단(문장)에 붙어 다니는 문단
 
   function tableEl(bl) {
     var t = document.createElement("table");
@@ -644,8 +696,32 @@
     return t;
   }
 
+  // 서식 있는 표: 칸마다 문단(run 목록) 여러 개
+  function richTableEl(bl) {
+    var t = document.createElement("table");
+    t.className = "answer-table wb-rich";
+    var sum = bl.widths.reduce(function (a, b) { return a + b; }, 0);
+    var cg = document.createElement("colgroup");
+    bl.widths.forEach(function (w) { var c = document.createElement("col"); c.style.width = (100 * w / sum) + "%"; cg.appendChild(c); });
+    t.appendChild(cg);
+    var head = document.createElement("tr");
+    bl.header.forEach(function (text) { var th = document.createElement("th"); th.textContent = text; head.appendChild(th); });
+    t.appendChild(head);
+    bl.rows.forEach(function (row) {
+      var tr = document.createElement("tr");
+      row.forEach(function (paras) {
+        var td = document.createElement("td");
+        paras.forEach(function (runs) { var p = document.createElement("p"); runsToNodes(runs, p); td.appendChild(p); });
+        tr.appendChild(td);
+      });
+      t.appendChild(tr);
+    });
+    return t;
+  }
+
   function blockEl(bl, prev, next) {
     if (bl.kind === "answerTable") return tableEl(bl);
+    if (bl.kind === "richTable") return richTableEl(bl);
     var el = document.createElement("p");
     el.className = "k-" + bl.kind;
     if (bl.kind === "ask") {
@@ -701,7 +777,7 @@
         cur = { blocks: [], item: null };
         out.push(cur);
       }
-      if (bl.kind === "ask") cur.item = bl.item;
+      if (bl.item) cur.item = bl.item;
       cur.blocks.push({ bl: bl, prev: blocks[i - 1], next: blocks[i + 1] });
     });
     return out;
@@ -788,7 +864,8 @@
         return;
       }
       if (u.item) {
-        var host = els[u.blocks.findIndex(function (x) { return x.bl.kind === "ask"; })];
+        var host = els[u.blocks.findIndex(function (x) { return x.bl.item; })];
+        host.style.position = "relative";
         host.appendChild(itemTools(u.item));
       }
       var col = cols[ci];
@@ -805,9 +882,16 @@
         nextCol(); col = cols[ci];
         els.slice(0, lead).forEach(function (el) { col.appendChild(el); });
       }
-      els.slice(lead).forEach(function (el) {
+      els.slice(lead).forEach(function (el, k) {
         col.appendChild(el);
-        if (overflows(col) && col.childElementCount > 1) { el.remove(); nextCol(); col = cols[ci]; col.appendChild(el); }
+        if (!overflows(col) || col.childElementCount < 2) return;
+        // 문장 하나의 묶음(문장 → 보기·해석·쓰는 줄)은 쪽 사이에서 갈리지 않게 묶음 처음부터 넘긴다.
+        var group = [el];
+        for (var j = lead + k; j > lead && STICKY[u.blocks[j].bl.kind] && els[j - 1].parentNode === col; j--) group.unshift(els[j - 1]);
+        if (group.length >= col.childElementCount) group = [el];
+        group.forEach(function (g) { g.remove(); });
+        nextCol(); col = cols[ci];
+        group.forEach(function (g) { col.appendChild(g); });
       });
     });
     fitPages();

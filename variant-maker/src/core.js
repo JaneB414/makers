@@ -1110,11 +1110,11 @@
 
   var KIND_CHAR = {
     eyebrow: "eyebrow", title: "title", nameLine: "name", src: "src", ask: "ask",
-    box: "body", para: "body", choice: "body", answerLine: "body", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead", gridCaption: "ans", answerTable: "body"
+    box: "body", para: "body", choice: "body", answerLine: "body", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead", gridCaption: "ans", answerTable: "body", richTable: "body"
   };
   var KIND_PARA = {
     eyebrow: "eyebrow", title: "title", nameLine: "nameLine", src: "src", ask: "ask",
-    box: "box", para: "body", choice: "choice", answerLine: "answerLine", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead", gridCaption: "gridCaption", answerTable: "body"
+    box: "box", para: "body", choice: "choice", answerLine: "answerLine", ansTitle: "ansTitle", ans: "ans", roundTitle: "ansTitle", typeHead: "typeHead", gridCaption: "gridCaption", answerTable: "body", richTable: "body"
   };
 
   // 굵게·밑줄 조합이 있는 글자 모양이면 그것을, 없으면 가장 가까운 것을 쓴다.
@@ -1177,6 +1177,7 @@
       var nextId = function () { return pid++; };
       var runsXml = bl.kind === "answerGrid" ? '<hp:run charPrIDRef="0">' + gridTableXml(template, bl, nextId) + "</hp:run>"
         : bl.kind === "answerTable" ? '<hp:run charPrIDRef="0">' + answerTableXml(template, bl, nextId, bl.full ? 1 : columns) + "</hp:run>"
+        : bl.kind === "richTable" ? '<hp:run charPrIDRef="0">' + richTableXml(template, bl, nextId, bl.full ? 1 : columns) + "</hp:run>"
         : hwpxRuns(style, bl.runs, bl.kind);
       var want = bl.full ? 1 : columns;
       if (want !== currentCols) {
@@ -1259,6 +1260,33 @@
       '<hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="100" right="100" top="60" bottom="60"/>' + trs.join("") + "</hp:tbl>";
   }
 
+  // 서식 있는 표(워크북의 본문|해석, 본문|구문 설명). 머리 행은 글자, 나머지 칸은 문단 목록(문단 = run 목록)이다.
+  // bl: {header, widths, span, rows: [[[runs, ...], ...], ...]}
+  function richTableXml(template, bl, nextId, columns) {
+    var style = template.__style;
+    var colWidth = columns === 2 ? Math.floor((template.__bodyWidth - 1984) / 2) : template.__bodyWidth;
+    var widths = tableWidths(bl, colWidth), headH = 1200, rowH = 1000;
+    function cell(paras, r, c, head) {
+      var body = paras.map(function (runs) {
+        return '<hp:p paraPrIDRef="' + style.para[head ? "gridCell" : "cellLeft"] + '" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0" id="' + nextId() + '">' +
+          (runs.length ? hwpxRuns(style, runs, "richTable") : '<hp:run charPrIDRef="' + style.char.cell + '"><hp:t/></hp:run>') + "</hp:p>";
+      }).join("");
+      return '<hp:tc name="" header="' + (head ? 1 : 0) + '" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="' + style.borderFill[head ? "gridNum" : "gridAns"] + '">' +
+        '<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="' + (head ? "CENTER" : "TOP") + '" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">' + body + "</hp:subList>" +
+        '<hp:cellAddr colAddr="' + c + '" rowAddr="' + r + '"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="' + widths[c] + '" height="' + (head ? headH : rowH) + '"/>' +
+        '<hp:cellMargin left="300" right="300" top="150" bottom="150"/></hp:tc>';
+    }
+    var trs = ["<hp:tr>" + bl.header.map(function (t, c) { return cell([[{ text: t, role: "gridNum" }]], 0, c, true); }).join("") + "</hp:tr>"];
+    bl.rows.forEach(function (row, r) {
+      trs.push("<hp:tr>" + row.map(function (paras, c) { return cell(paras.length ? paras : [[]], r + 1, c, false); }).join("") + "</hp:tr>");
+    });
+    var total = widths.reduce(function (a, b) { return a + b; }, 0);
+    return '<hp:tbl id="' + nextId() + '" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" rowCnt="' + trs.length + '" colCnt="' + widths.length + '" cellSpacing="0" borderFillIDRef="' + style.borderFill.gridAns + '" noAdjust="0">' +
+      '<hp:sz width="' + total + '" widthRelTo="ABSOLUTE" height="' + (headH + rowH * bl.rows.length) + '" heightRelTo="ABSOLUTE" protect="0"/>' +
+      '<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>' +
+      '<hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="300" right="300" top="150" bottom="150"/>' + trs.join("") + "</hp:tbl>";
+  }
+
   function utf8(s) {
     if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s);
     return new Uint8Array(Buffer.from(s, "utf8"));
@@ -1332,7 +1360,9 @@
     title: [BATANG, 18, true], eyebrow: [DOTUM, 8.5, true, NAVY], name: [DOTUM, 9], hf: [DOTUM, 8, false, "555555"],
     ansTitle: [BATANG, 14, true], ansNum: [BATANG, 9.5, true, NAVY], ans: [BATANG, 9.5], explain: [BATANG, 8.5, false, "444444"],
     tag: [DOTUM, 8, true, NAVY, "E3EAF5"], typeHead: [DOTUM, 10.5, true, NAVY], typeRange: [DOTUM, 8, false, "6B7688"],
-    gridNum: [DOTUM, 8.5, false, "333333"], gridAns: [BATANG, 9.5]
+    gridNum: [DOTUM, 8.5, false, "333333"], gridAns: [BATANG, 9.5],
+    cell: [BATANG, 9.5], hl: [BATANG, 9.5, false, null, "FFF1A8"], cellKo: [BATANG, 8.5, false, "333333"],
+    pn: [DOTUM, 7.5, true, "B04A3A"], lbl: [DOTUM, 8.5, true, "6B7688"]
   };
 
   // 문단 모양 (단위: twip, 1mm ≈ 56.7)
@@ -1399,6 +1429,26 @@
     return '<w:tbl><w:tblPr><w:tblW w:w="' + BODY_TWIP + '" w:type="dxa"/><w:tblBorders>' + border + '</w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>' + grid + "</w:tblGrid>" + trs + "</w:tbl>";
   }
 
+  function docxRichTable(bl, columns) {
+    var widths = tableWidths(bl, columns === 2 ? Math.floor((BODY_TWIP - 567) / 2) : BODY_TWIP);
+    var border = '<w:top w:val="single" w:sz="4" w:color="AEB6C4"/><w:left w:val="single" w:sz="4" w:color="AEB6C4"/><w:bottom w:val="single" w:sz="4" w:color="AEB6C4"/><w:right w:val="single" w:sz="4" w:color="AEB6C4"/><w:insideH w:val="single" w:sz="4" w:color="AEB6C4"/><w:insideV w:val="single" w:sz="4" w:color="AEB6C4"/>';
+    function cell(paras, c, head) {
+      var ps = paras.map(function (runs) {
+        return "<w:p><w:pPr>" + (head ? '<w:spacing w:before="20" w:after="20" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/>'
+          : '<w:spacing w:before="0" w:after="20" w:line="276" w:lineRule="auto"/><w:ind w:left="230" w:hanging="230"/>') + "</w:pPr>" +
+          runs.map(function (r) { return docxRun(r, "richTable"); }).join("") + "</w:p>";
+      }).join("");
+      return '<w:tc><w:tcPr><w:tcW w:w="' + widths[c] + '" w:type="dxa"/>' + (head ? '<w:shd w:val="clear" w:color="auto" w:fill="EEF1F6"/>' : "") + "</w:tcPr>" + (ps || "<w:p/>") + "</w:tc>";
+    }
+    var trs = '<w:tr><w:trPr><w:tblHeader/></w:trPr>' + bl.header.map(function (t, c) { return cell([[{ text: t, role: "gridNum" }]], c, true); }).join("") + "</w:tr>";
+    bl.rows.forEach(function (row) {
+      trs += '<w:tr><w:trPr><w:cantSplit/></w:trPr>' + row.map(function (paras, c) { return cell(paras.length ? paras : [[]], c, false); }).join("") + "</w:tr>";
+    });
+    var total = widths.reduce(function (a, b) { return a + b; }, 0);
+    return '<w:tbl><w:tblPr><w:tblW w:w="' + total + '" w:type="dxa"/><w:tblBorders>' + border + '</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="80" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>' +
+      widths.map(function (w) { return '<w:gridCol w:w="' + w + '"/>'; }).join("") + "</w:tblGrid>" + trs + "</w:tbl>";
+  }
+
   function docxAnswerTable(bl, columns) {
     var widths = bl.span ? tableWidths(bl, columns === 2 ? Math.floor((BODY_TWIP - 567) / 2) : BODY_TWIP) : [1000, 1700, 1700];
     var border = '<w:top w:val="single" w:sz="4" w:color="AEB6C4"/><w:left w:val="single" w:sz="4" w:color="AEB6C4"/><w:bottom w:val="single" w:sz="4" w:color="AEB6C4"/><w:right w:val="single" w:sz="4" w:color="AEB6C4"/><w:insideH w:val="single" w:sz="4" w:color="AEB6C4"/><w:insideV w:val="single" w:sz="4" w:color="AEB6C4"/>';
@@ -1435,6 +1485,10 @@
       }
       if (bl.kind === "answerTable") {
         items.push({ table: docxAnswerTable(bl, full ? 1 : columns) });
+        return;
+      }
+      if (bl.kind === "richTable") {
+        items.push({ table: docxRichTable(bl, full ? 1 : columns) });
         return;
       }
       var key = bl.kind === "ask" && bl.first ? "askFirst" : bl.kind;

@@ -39,12 +39,12 @@ test("문장 순서 배열: 정답 순서대로 이으면 원문이고, 원래 �
   assert.throws(() => WB.makeOrder(SENTS.slice(0, 3), VM.makeRng(1)));
 });
 
-test("단어 배열: 덩어리를 모으면 원래 문장의 낱말과 같다", () => {
+test("단어 순서 배열: 한 단어씩 잘라 섞고, 모으면 원래 문장의 낱말과 같다", () => {
   const d = WB.makeScramble(SENTS, VM.makeRng(5), {});
   d.items.forEach((it) => {
     const words = (s) => s.replace(/[.!?]+["')\]]*$/, "").toLowerCase().split(/\s+/).sort().join(" ");
     assert.strictEqual(words(it.chunks.replace(/ \/ /g, " ")), words(it.answer));
-    assert.ok(it.chunks.split(" / ").length <= 10);
+    assert.strictEqual(it.chunks.split(" / ").length, it.answer.split(/\s+/).length);
   });
 });
 
@@ -92,7 +92,9 @@ test("워크북 문서: 활동별 구간에 모든 지문을 출처와 함께 �
     translations: SENTS.map((_, i) => "해석 " + (i + 1)),
     vocab: [{ word: "a", form: "", pos: "n.", meaning: "가" }, { word: "b", form: "", pos: "v.", meaning: "나" }],
     grammar: [{ s: 1, answer: SENTS[0].split(" ")[1], wrong: "zz" }],
-    lexical: [{ s: 2, answer: SENTS[1].split(" ")[1], wrong: "yy" }]
+    lexical: [{ s: 2, answer: SENTS[1].split(" ")[1], wrong: "yy" }],
+    summary: { gist: "요지", topic: "topic", topicKo: "주제", title: "Title", titleKo: "제목", flow: [{ part: "도입", from: 1, to: 2 }] },
+    syntax: { marks: SENTS.map(() => ({ subjects: [], verbs: [] })), points: [{ s: 1, phrase: SENTS[0].split(" ").slice(0, 2).join(" "), note: "설명" }] }
   };
   const rng = VM.makeRng(9);
   const items = [];
@@ -103,11 +105,13 @@ test("워크북 문서: 활동별 구간에 모든 지문을 출처와 함께 �
   assert.throws(() => WB.makeActivity("blank", SENTS, {}, rng), /AI 분석/);
   const sorted = WB.sortItems(items.slice().reverse(), (s) => (s.no === "12" ? 1 : 0));
   assert.deepStrictEqual(sorted.slice(0, 2).map((i) => i.id), ["11강 Practice 3study", "12study"]);
-  assert.deepStrictEqual([...new Set(sorted.map((i) => i.type))].slice(0, 6), ["study", "translate", "lexical", "blank", "grammar", "scramble"]);
+  assert.deepStrictEqual([...new Set(sorted.map((i) => i.type))], ["study", "syntax", "lexical", "blank", "grammar", "scramble", "order", "compose", "translate"]);
   for (const columns of [1, 2]) {
     const doc = { title: "워크북", layout: {}, options: { columns, newPage: true }, items: sorted };
     const blocks = WB.buildBlocks(doc);
-    assert.strictEqual(blocks.filter((b) => b.kind === "typeHead").length, WB.ACTIVITIES.length);
+    // 지문 정리는 지문마다 제목(2개), 나머지는 활동마다 구간 제목
+    assert.strictEqual(blocks.filter((b) => b.kind === "typeHead").length, 2 + WB.ACTIVITIES.length - 1);
+    assert.strictEqual(blocks.filter((b) => b.kind === "richTable").length, 4); // 본문|해석 2개 + 구문 분석 2개
     const asks = blocks.filter((b) => b.kind === "ask").map((b) => b.runs.map((r) => r.text).join(""));
     assert.strictEqual(asks[0], "1올림포스2 독해의 기본 11강 Practice 3");
     assert.strictEqual(asks[1], "2올림포스2 독해의 기본 12번");
@@ -115,7 +119,9 @@ test("워크북 문서: 활동별 구간에 모든 지문을 출처와 함께 �
     const hwpx = VM.buildHwpx(TEMPLATE, doc, blocks);
     const docx = VM.buildDocx(doc, blocks);
     assert.ok(hwpx.length > 1000 && docx.length > 1000);
-    assert.match(Buffer.from(hwpx).toString("utf8"), /colCnt="4"/); // 단어 정리 표
+    const xml = Buffer.from(hwpx).toString("utf8");
+    assert.match(xml, /colCnt="8"/); // 단어 정리 표(두 칸)
+    assert.ok(xml.includes('charPrIDRef="' + TEMPLATE.__style.char.hl + '"')); // 구문 분석 형광펜
   }
 });
 
@@ -124,4 +130,36 @@ test("빈칸 채우기: 문장마다 해석을 함께 준다", () => {
   const d = WB.makeActivity("blank", SENTS, { translations: tr }, VM.makeRng(4));
   assert.strictEqual(d.sentences.length, SENTS.length);
   assert.deepStrictEqual(d.translations, tr);
+});
+
+test("구문 분석: 주어 밑줄·동사 굵게·핵심 구문 형광펜과 지문 안에서 이어지는 번호", () => {
+  const sents = ["Many people believe that creativity is rare.", "The ocean covers most of our planet."];
+  const d = WB.makeActivity("syntax", sents, { syntax: {
+    marks: [{ subjects: ["Many people"], verbs: ["believe"] }, { subjects: ["The ocean"], verbs: ["covers"] }],
+    points: [{ s: 1, phrase: "that creativity is rare", note: "that절 → believe의 목적어" }, { s: 2, phrase: "most of our planet", note: "most of + 명사" }]
+  } }, VM.makeRng(1));
+  const blocks = WB.activityBlocks({ type: "syntax", data: d }, 1);
+  const rows = blocks[0].rows;
+  const left = rows[0][0][0];
+  assert.deepStrictEqual(left.filter((r) => r.u).map((r) => r.text), ["Many people"]);
+  assert.deepStrictEqual(left.filter((r) => r.b).map((r) => r.text), ["believe"]);
+  assert.deepStrictEqual(left.filter((r) => r.role === "hl").map((r) => r.text), ["that creativity is rare"]);
+  assert.strictEqual(rows[1][1][0][0].text.trim(), "❷"); // 둘째 문장의 설명 번호는 ❷
+  assert.strictEqual(left.map((r) => r.text).join(""), "① Many people believe that creativity is rare❶.");
+});
+
+test("AI 답변 읽기: 내용 정리와 구문 분석에서 지문에 없는 표시는 뺀다", () => {
+  const reply = JSON.stringify({ passages: [{ key: "1",
+    summary: { gist: "요지", topic: "t", topicKo: "주제", title: "T", titleKo: "제목", flow: [{ part: "도입", from: 1, to: 2 }, { part: "잘못", from: 99, to: 99 }] },
+    syntax: { marks: [{ s: 1, subjects: [SENTS[0].split(" ")[0], "없는주어"], verbs: [] }], points: [{ s: 1, phrase: "없는 구문", note: "x" }, { s: 2, phrase: SENTS[1].split(" ").slice(0, 2).join(" "), note: "설명" }] }
+  }] });
+  const r = WB.parseAnalysis(reply, { "1": SENTS });
+  const a = r.results["1"];
+  assert.strictEqual(a.summary.flow.length, 1);
+  assert.strictEqual(a.summary.flow[0].to, 2);
+  assert.deepStrictEqual(a.syntax.marks[0].subjects, [SENTS[0].split(" ")[0]]);
+  assert.strictEqual(a.syntax.marks.length, SENTS.length);
+  assert.strictEqual(a.syntax.points.length, 1);
+  assert.ok(r.warnings.some((w) => /구문 분석/.test(w)));
+  assert.strictEqual(WB.flowText(a.summary.flow), "도입 ①~②");
 });

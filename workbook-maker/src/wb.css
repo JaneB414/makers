@@ -11,3 +11,19 @@
 .page .answer-table.wb-table th { width: auto; }
 .page .answer-table.wb-table th:first-child { width: auto; }
 .page .k-gridCaption + .k-ans { margin-top: 2px; }
+
+/* 지문 정리·구문 분석 */
+.page .answer-table.wb-rich td { text-align: left; vertical-align: top; height: auto; padding: 3px 6px; }
+.page .answer-table.wb-rich td p { padding-left: 1.3em; text-indent: -1.3em; font: 12.67px/1.55 var(--en), var(--kr-serif); }
+.page .answer-table.wb-rich th { font-weight: 700; color: var(--navy); }
+.page .r-cellKo { font-size: 11.33px; color: #333; }
+.page .r-hl { background: #fff1a8; }
+.page .r-pn { font: 700 10px var(--kr-sans); color: #b04a3a; vertical-align: 2px; margin-left: 1px; }
+.page .r-lbl { font: 700 11.33px var(--kr-sans); color: var(--src-gray); }
+.page .k-typeHead .r-typeHead + .r-typeHead { color: var(--ink); }
+/* 지문 하나가 한 쪽에 들어가도록 촘촘하게 */
+.page .answer-table.wb-rich td { padding: 2px 5px; }
+.page .answer-table.wb-rich td p { font-size: 12.3px; line-height: 1.42; }
+.page .r-cellKo { font-size: 11px; }
+.page .answer-table.wb-table td { height: 21px; padding: 1px 4px; font-size: 12px; line-height: 1.3; }
+.page .k-typeHead + .k-src { margin-top: 8px; }
